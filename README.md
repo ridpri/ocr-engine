@@ -125,6 +125,8 @@ Environment variable Vercel:
 - `OCR_API_BASE_URL`: base URL backend OCR, default `http://203.194.113.161`
 - `OCR_API_KEY`: API key backend OCR, optional tetapi direkomendasikan supaya key tidak diketik di browser
 
+Frontend tester tidak lagi menampilkan pilihan mode `fast`/`accurate`. Untuk menghindari STNK sering terlihat kosong karena timeout fast checkout, endpoint STNK default ke proses `accurate`; query `mode=fast|accurate` tetap tersedia hanya untuk integrasi teknis yang membutuhkan kompatibilitas lama.
+
 Build command:
 
 ```powershell

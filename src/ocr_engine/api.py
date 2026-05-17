@@ -96,7 +96,7 @@ def create_app():
     @app.post("/ocr/stnk")
     async def ocr_stnk(
         file: UploadFile = File(...),
-        mode: str = Query("fast", pattern="^(fast|accurate)$"),
+        mode: str = Query("accurate", pattern="^(fast|accurate)$"),
         enrich: bool = Query(False),
     ) -> dict:
         return await _ocr_document(file, "STNK", mode, enrich)
@@ -137,7 +137,7 @@ def create_app():
     async def ocr_vps_stnk(
         request: Request,
         file: UploadFile = File(...),
-        mode: str = Query("fast", pattern="^(fast|accurate)$"),
+        mode: str = Query("accurate", pattern="^(fast|accurate)$"),
     ) -> JSONResponse:
         return await _ocr_vps_document(request, file, f"/ocr/stnk?mode={mode}")
 

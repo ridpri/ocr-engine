@@ -451,12 +451,6 @@ def frontend_html() -> str:
           <input id="vps-api-key" name="vps_api_key" type="password" placeholder="Isi kalau memilih engine VPS" autocomplete="off" />
           <div class="status">Testing only. Untuk production, API key harus disimpan di backend/proxy, bukan di browser.</div>
 
-          <label class="field-label" for="processing-mode">Mode proses lokal</label>
-          <select id="processing-mode" name="processing_mode">
-            <option value="fast">Fast checkout</option>
-            <option value="accurate">Accurate</option>
-          </select>
-
           <div class="actions">
             <button id="submit-button" type="submit">Jalankan OCR</button>
             <button class="secondary" id="reset-button" type="button">Reset</button>
@@ -558,7 +552,7 @@ def frontend_html() -> str:
       </div>
       <div class="api-grid">
         <div class="api-tile"><strong>KTP lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/ktp</code></div>
-        <div class="api-tile"><strong>STNK lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/stnk?mode=fast</code></div>
+        <div class="api-tile"><strong>STNK lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/stnk</code></div>
         <div class="api-tile"><strong>KTP agent VPS</strong><br><code>POST http://203.194.113.161/ocr/agent/ktp</code></div>
         <div class="api-tile"><strong>STNK agent VPS</strong><br><code>POST http://203.194.113.161/ocr/agent/stnk</code></div>
       </div>
@@ -575,7 +569,7 @@ def frontend_html() -> str:
   -H "X-API-Key: YOUR_API_KEY" \
   -F "file=@KTP.jpg"
 
-curl -X POST "http://203.194.113.161/ocr/stnk?mode=fast" \
+curl -X POST "http://203.194.113.161/ocr/stnk" \
   -H "X-API-Key: YOUR_API_KEY" \
   -F "file=@STNK.pdf"</code></pre>
 
@@ -718,13 +712,12 @@ export async function POST(request) {
       clearRenderedResult("OCR sedang berjalan.");
       const documentType = document.getElementById("document-type").value;
       const engineType = document.getElementById("engine-type").value;
-      const processingMode = document.getElementById("processing-mode").value;
       const vpsApiKey = document.getElementById("vps-api-key").value.trim();
       const body = new FormData();
       body.append("file", file);
 
       try {
-        const endpoint = endpointFor(documentType, engineType, processingMode);
+        const endpoint = endpointFor(documentType, engineType);
         if (engineType.startsWith("vps-") && !vpsApiKey) {
           throw new Error("Isi VPS API Key dulu untuk engine VPS.");
         }
@@ -750,11 +743,11 @@ export async function POST(request) {
       }
     });
 
-    function endpointFor(documentType, engineType, processingMode) {
+    function endpointFor(documentType, engineType) {
       if (engineType === "vps-local") {
-        if (documentType === "KTP") return `/ocr/vps/ktp?mode=${encodeURIComponent(processingMode)}`;
-        if (documentType === "STNK") return `/ocr/vps/stnk?mode=${encodeURIComponent(processingMode)}`;
-        return `/ocr/vps?document_type=${encodeURIComponent(documentType)}&mode=${encodeURIComponent(processingMode)}`;
+        if (documentType === "KTP") return "/ocr/vps/ktp";
+        if (documentType === "STNK") return "/ocr/vps/stnk";
+        return `/ocr/vps?document_type=${encodeURIComponent(documentType)}`;
       }
       if (engineType === "vps-agent") {
         if (documentType === "KTP") return "/ocr/vps/agent/ktp";
@@ -767,7 +760,7 @@ export async function POST(request) {
         return `/ocr/agent?document_type=${encodeURIComponent(documentType)}`;
       }
       if (documentType === "KTP") return "/ocr/ktp";
-      if (documentType === "STNK") return `/ocr/stnk?mode=${encodeURIComponent(processingMode)}`;
+      if (documentType === "STNK") return "/ocr/stnk";
       return `/ocr?document_type=${encodeURIComponent(documentType)}`;
     }
 

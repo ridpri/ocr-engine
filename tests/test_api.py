@@ -138,7 +138,7 @@ class ApiEndpointTests(unittest.TestCase):
         self.assertEqual(payload["input_assessment"]["expected_document_type"], "STNK")
         self.assertEqual(payload["input_assessment"]["decision"], "rejected_input")
         self.assertIn("document_type_mismatch", payload["input_assessment"]["reason_codes"])
-        self.assertEqual(payload["ocr"]["processing_mode"], "fast")
+        self.assertEqual(payload["ocr"]["processing_mode"], "accurate")
         self.assertEqual(payload["enrichment"]["status"], "not_requested")
 
     def test_fixed_stnk_endpoint_queues_background_enrichment_when_fast_result_needs_review(self):
