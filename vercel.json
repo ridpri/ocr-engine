@@ -1,4 +1,5 @@
 {
+  "framework": null,
   "buildCommand": "python scripts/export_frontend.py",
   "outputDirectory": "public",
   "rewrites": [
