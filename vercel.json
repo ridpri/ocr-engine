@@ -1,0 +1,14 @@
+{
+  "buildCommand": "python scripts/export_frontend.py",
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/ocr/:path*",
+      "destination": "/api/ocr/:path*"
+    }
+  ]
+}

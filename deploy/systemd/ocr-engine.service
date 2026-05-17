@@ -1,0 +1,16 @@
+[Unit]
+Description=OCR Engine Docker Compose service
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/ocr-engine/deploy
+ExecStart=/usr/bin/docker compose up -d --build
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

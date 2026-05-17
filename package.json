@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "build": "python scripts/export_frontend.py"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.15.0"
+  }
+}

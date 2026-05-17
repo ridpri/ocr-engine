@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OCR KTP/STNK Tester</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --surface-2: #eef2f7;
+      --text: #17202a;
+      --muted: #647181;
+      --border: #d9e0e8;
+      --accent: #1768ac;
+      --accent-2: #0d4d80;
+      --ok: #127a4a;
+      --warn: #a35d00;
+      --bad: #b42318;
+      --shadow: 0 18px 50px rgba(20, 31, 43, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      letter-spacing: 0;
+    }
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-end;
+      margin-bottom: 22px;
+    }
+    h1 {
+      margin: 0 0 7px;
+      font-size: clamp(26px, 4vw, 38px);
+      line-height: 1.08;
+      font-weight: 750;
+    }
+    p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .health {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #aab4bf;
+    }
+    .dot.ok { background: var(--ok); }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(310px, 420px) minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .panel { padding: 18px; }
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+    .dropzone {
+      border: 1.5px dashed #aeb9c6;
+      background: #fbfcfd;
+      border-radius: 8px;
+      min-height: 178px;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s ease, background .15s ease;
+    }
+    .dropzone.dragover {
+      border-color: var(--accent);
+      background: #eef6fc;
+    }
+    .dropzone strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 15px;
+    }
+    input[type="file"] { display: none; }
+    .preview {
+      margin-top: 14px;
+      display: none;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      background: var(--surface-2);
+    }
+    .preview img {
+      width: 92px;
+      height: 64px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #fff;
+    }
+    .preview span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    label.field-label {
+      display: block;
+      margin: 16px 0 7px;
+      font-weight: 650;
+      font-size: 13px;
+      color: #354251;
+    }
+    select,
+    input[type="password"],
+    input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 8px;
+      padding: 11px 12px;
+      font: inherit;
+      color: var(--text);
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 11px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    button:hover { background: var(--accent-2); }
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .secondary {
+      background: #e6ebf1;
+      color: #243141;
+    }
+    .secondary:hover { background: #d8e0e8; }
+    .status {
+      margin-top: 14px;
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding: 16px 18px;
+    }
+    .result-header h2 { margin: 0; font-size: 16px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 750;
+      color: #fff;
+      background: var(--muted);
+    }
+    .badge.ok { background: var(--ok); }
+    .badge.warn { background: var(--warn); }
+    .badge.bad { background: var(--bad); }
+    .empty {
+      padding: 34px 18px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+      gap: 10px;
+      padding: 16px 18px 4px;
+    }
+    .metric {
+      background: var(--surface-2);
+      border-radius: 8px;
+      padding: 11px;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+    .metric strong {
+      display: block;
+      font-size: 15px;
+      overflow-wrap: anywhere;
+    }
+    .result-section {
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .result-section:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 18px 0;
+    }
+    .section-title h3 {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+    .section-title span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border-top: 1px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 750;
+      background: #fbfcfd;
+    }
+    td.value { font-weight: 650; overflow-wrap: anywhere; }
+    .field-status {
+      font-weight: 750;
+      color: var(--ok);
+    }
+    .field-status.missing,
+    .field-status.invalid {
+      color: var(--bad);
+    }
+    .confidence {
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .warnings {
+      display: none;
+      margin: 14px 18px 0;
+      border: 1px solid #f2c572;
+      background: #fff8e8;
+      color: #6b3d00;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+    .assessment {
+      display: none;
+      margin: 14px 18px 0;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: #243141;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .assessment.review {
+      border-color: #f2c572;
+      background: #fff8e8;
+      color: #6b3d00;
+    }
+    .assessment.rejected {
+      border-color: #f0aaa4;
+      background: #fff1f0;
+      color: #7a1b12;
+    }
+    details {
+      margin: 14px 18px 18px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    summary {
+      padding: 10px 12px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #fbfcfd;
+    }
+    pre {
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      max-height: 330px;
+      background: #0f1720;
+      color: #e7edf5;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .copy-row {
+      display: flex;
+      justify-content: flex-end;
+      padding: 0 18px 18px;
+    }
+    .api-docs {
+      margin-top: 18px;
+      padding: 18px;
+    }
+    .api-docs h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+    .api-docs h3 {
+      margin: 18px 0 8px;
+      font-size: 14px;
+    }
+    .api-docs ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .api-docs code {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1px 5px;
+      color: #243141;
+    }
+    .api-warning {
+      border: 1px solid #f2c572;
+      background: #fff8e8;
+      color: #6b3d00;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.45;
+      margin: 12px 0;
+    }
+    .api-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .api-tile {
+      border: 1px solid var(--border);
+      background: #fbfcfd;
+      border-radius: 8px;
+      padding: 11px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    @media (max-width: 850px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .layout { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>OCR KTP/STNK Tester</h1>
+        <p>Upload gambar dokumen, jalankan OCR lokal, lalu cek field, confidence, warning, dan JSON hasil ekstraksi.</p>
+      </div>
+      <div class="health"><span id="health-dot" class="dot"></span><span id="health-text">Checking API</span></div>
+    </header>
+
+    <div class="layout">
+      <section class="panel">
+        <h2>Input Dokumen</h2>
+        <form id="ocr-form">
+          <label class="dropzone" id="dropzone" for="file-input">
+            <span>
+              <strong>Drop gambar di sini atau klik untuk browse</strong>
+              <span>JPG, PNG, BMP, WEBP, PDF halaman pertama.</span>
+            </span>
+          </label>
+          <input id="file-input" name="file" type="file" accept="image/*,application/pdf,.pdf" required />
+          <div class="preview" id="preview">
+            <img id="preview-img" alt="Preview dokumen" />
+            <div>
+              <strong id="file-name"></strong>
+              <span id="file-meta"></span>
+            </div>
+          </div>
+
+          <label class="field-label" for="document-type">Tipe dokumen</label>
+          <select id="document-type" name="document_type">
+            <option value="AUTO">AUTO</option>
+            <option value="KTP">KTP</option>
+            <option value="STNK">STNK</option>
+          </select>
+
+          <label class="field-label" for="engine-type">Engine</label>
+          <select id="engine-type" name="engine_type">
+            <option value="local">Local PaddleOCR</option>
+            <option value="agent">Agent OpenClaw/Codex</option>
+            <option value="vps-local">VPS Local PaddleOCR</option>
+            <option value="vps-agent">VPS Agent OpenClaw/Codex</option>
+          </select>
+
+          <label class="field-label" for="vps-api-key">VPS API Key</label>
+          <input id="vps-api-key" name="vps_api_key" type="password" placeholder="Isi kalau memilih engine VPS" autocomplete="off" />
+          <div class="status">Testing only. Untuk production, API key harus disimpan di backend/proxy, bukan di browser.</div>
+
+          <label class="field-label" for="processing-mode">Mode proses lokal</label>
+          <select id="processing-mode" name="processing_mode">
+            <option value="fast">Fast checkout</option>
+            <option value="accurate">Accurate</option>
+          </select>
+
+          <div class="actions">
+            <button id="submit-button" type="submit">Jalankan OCR</button>
+            <button class="secondary" id="reset-button" type="button">Reset</button>
+          </div>
+          <div class="status" id="status">Pilih gambar untuk mulai.</div>
+        </form>
+      </section>
+
+      <section id="result-card">
+        <div class="result-header">
+          <h2>Hasil Ekstraksi</h2>
+          <span id="review-badge" class="badge">Belum ada hasil</span>
+        </div>
+        <div id="empty-state" class="empty">Hasil akan muncul setelah OCR selesai.</div>
+        <div id="result-body" style="display:none;">
+          <div id="initial-section" class="result-section">
+          <div class="section-title">
+            <h3>Hasil Awal</h3>
+            <span id="initial-status">Menunggu OCR</span>
+          </div>
+          <div class="summary">
+            <div class="metric"><span>Document Type</span><strong id="summary-type">-</strong></div>
+            <div class="metric"><span>OCR Tokens</span><strong id="summary-tokens">-</strong></div>
+            <div class="metric"><span>OCR Retry</span><strong id="summary-retry">-</strong></div>
+            <div class="metric"><span>Max Side</span><strong id="summary-resolution">-</strong></div>
+            <div class="metric"><span>Warnings</span><strong id="summary-warnings">-</strong></div>
+            <div class="metric"><span>Decision</span><strong id="summary-decision">-</strong></div>
+            <div class="metric"><span>Engine Used</span><strong id="summary-engine-used">-</strong></div>
+            <div class="metric"><span>Auto Publish</span><strong id="summary-auto-publish">-</strong></div>
+            <div class="metric"><span>Pipeline Time</span><strong id="summary-pipeline-time">-</strong></div>
+            <div class="metric"><span>OCR Time</span><strong id="summary-ocr-time">-</strong></div>
+            <div class="metric"><span>Prepare Time</span><strong id="summary-prepare-time">-</strong></div>
+            <div class="metric"><span>Quality Time</span><strong id="summary-quality-time">-</strong></div>
+            <div class="metric"><span>Roundtrip</span><strong id="summary-roundtrip-time">-</strong></div>
+          </div>
+          <div id="assessment" class="assessment"></div>
+          <div id="warnings" class="warnings"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Value</th>
+                <th>Status</th>
+                <th>Confidence</th>
+              </tr>
+            </thead>
+            <tbody id="fields-body"></tbody>
+          </table>
+          <details>
+            <summary>Raw OCR Masked</summary>
+            <pre id="raw-ocr"></pre>
+          </details>
+          <details>
+            <summary>Raw JSON</summary>
+            <pre id="raw-json"></pre>
+          </details>
+          <div class="copy-row">
+            <button class="secondary" id="copy-json" type="button">Copy JSON</button>
+          </div>
+          </div>
+          <div id="enrichment-section" class="result-section" style="display:none;">
+            <div class="section-title">
+              <h3>Background Enrichment</h3>
+              <span id="enrichment-status">Belum ada job</span>
+            </div>
+            <div class="summary">
+              <div class="metric"><span>Status</span><strong id="enrichment-summary-status">-</strong></div>
+              <div class="metric"><span>Elapsed</span><strong id="enrichment-elapsed">-</strong></div>
+              <div class="metric"><span>Processing</span><strong id="enrichment-processing-time">-</strong></div>
+              <div class="metric"><span>OCR Time</span><strong id="enrichment-ocr-time">-</strong></div>
+              <div class="metric"><span>Decision</span><strong id="enrichment-decision">-</strong></div>
+              <div class="metric"><span>Job ID</span><strong id="enrichment-job-id">-</strong></div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Value</th>
+                  <th>Status</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody id="enrichment-fields-body"></tbody>
+            </table>
+            <details>
+              <summary>Enrichment JSON</summary>
+              <pre id="enrichment-json"></pre>
+            </details>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="api-docs">
+      <h2>Cara Integrasi API</h2>
+      <p>Gunakan service OCR sebagai API multipart upload. Web cukup mengirim file dokumen dan membaca JSON hasil ekstraksi.</p>
+      <div class="api-warning">
+        Jangan taruh API key langsung di frontend publik. Kalau halaman ini dinaikkan ke GitHub/Vercel, simpan API key di environment variable serverless/API route, lalu frontend memanggil route proxy tersebut.
+      </div>
+      <div class="api-grid">
+        <div class="api-tile"><strong>KTP lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/ktp</code></div>
+        <div class="api-tile"><strong>STNK lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/stnk?mode=fast</code></div>
+        <div class="api-tile"><strong>KTP agent VPS</strong><br><code>POST http://203.194.113.161/ocr/agent/ktp</code></div>
+        <div class="api-tile"><strong>STNK agent VPS</strong><br><code>POST http://203.194.113.161/ocr/agent/stnk</code></div>
+      </div>
+      <ul>
+        <li>Method: <code>POST</code></li>
+        <li>Body: <code>multipart/form-data</code></li>
+        <li>Field file: <code>file</code></li>
+        <li>Header auth: <code>X-API-Key: &lt;API_KEY&gt;</code></li>
+        <li>Supported input: JPG, PNG, BMP, WEBP, PDF halaman pertama</li>
+      </ul>
+
+      <h3>Contoh cURL untuk IT</h3>
+      <pre><code>curl -X POST "http://203.194.113.161/ocr/ktp"   -H "X-API-Key: YOUR_API_KEY"   -F "file=@KTP.jpg"
+
+curl -X POST "http://203.194.113.161/ocr/stnk?mode=fast"   -H "X-API-Key: YOUR_API_KEY"   -F "file=@STNK.pdf"</code></pre>
+
+      <h3>Contoh JavaScript dari Frontend ke Backend Proxy</h3>
+      <pre><code>const formData = new FormData();
+formData.append("file", fileInput.files[0]);
+
+const response = await fetch("/api/ocr/ktp", {
+  method: "POST",
+  body: formData
+});
+
+const result = await response.json();
+if (result.input_assessment?.can_auto_publish) {
+  // lanjut proses pembelian
+} else {
+  // tampilkan review / minta upload ulang
+}</code></pre>
+
+      <h3>Contoh Vercel API Route Proxy</h3>
+      <pre><code>// app/api/ocr/ktp/route.js
+export async function POST(request) {
+  const body = await request.formData();
+  const response = await fetch("http://203.194.113.161/ocr/ktp", {
+    method: "POST",
+    headers: {
+      "X-API-Key": process.env.OCR_API_KEY
+    },
+    body
+  });
+
+  return Response.json(await response.json(), {
+    status: response.status
+  });
+}</code></pre>
+
+      <h3>Response Decision</h3>
+      <pre><code>{
+  "document_type": "KTP",
+  "needs_review": false,
+  "input_assessment": {
+    "can_auto_publish": true,
+    "decision": "approved_for_auto",
+    "reason_codes": []
+  },
+  "fields": {
+    "nik": { "value": "3374114208810004", "status": "ok" },
+    "nama": { "value": "DANI ANGGOROWATI", "status": "ok" }
+  }
+}</code></pre>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById("ocr-form");
+    const fileInput = document.getElementById("file-input");
+    const dropzone = document.getElementById("dropzone");
+    const preview = document.getElementById("preview");
+    const previewImg = document.getElementById("preview-img");
+    const fileName = document.getElementById("file-name");
+    const fileMeta = document.getElementById("file-meta");
+    const statusEl = document.getElementById("status");
+    const submitButton = document.getElementById("submit-button");
+    const resetButton = document.getElementById("reset-button");
+    const resultBody = document.getElementById("result-body");
+    const emptyState = document.getElementById("empty-state");
+    const reviewBadge = document.getElementById("review-badge");
+    const fieldsBody = document.getElementById("fields-body");
+    const assessmentEl = document.getElementById("assessment");
+    const warningsEl = document.getElementById("warnings");
+    const rawOcr = document.getElementById("raw-ocr");
+    const rawJson = document.getElementById("raw-json");
+    const copyJson = document.getElementById("copy-json");
+    const enrichmentSection = document.getElementById("enrichment-section");
+    const enrichmentFieldsBody = document.getElementById("enrichment-fields-body");
+    const enrichmentJson = document.getElementById("enrichment-json");
+    let lastJson = null;
+    let enrichmentPollTimer = null;
+
+    async function checkHealth() {
+      try {
+        const response = await fetch("/health");
+        if (!response.ok) throw new Error("API error");
+        document.getElementById("health-dot").classList.add("ok");
+        document.getElementById("health-text").textContent = "API online";
+      } catch {
+        document.getElementById("health-text").textContent = "API offline";
+      }
+    }
+
+    function setFile(file) {
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      previewImg.src = url;
+      fileName.textContent = file.name;
+      fileMeta.textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
+      preview.style.display = "flex";
+      statusEl.textContent = "File siap diproses.";
+    }
+
+    fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
+    dropzone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+    dropzone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("dragover");
+      if (event.dataTransfer.files.length) {
+        fileInput.files = event.dataTransfer.files;
+        setFile(fileInput.files[0]);
+      }
+    });
+
+    resetButton.addEventListener("click", () => {
+      form.reset();
+      preview.style.display = "none";
+      resultBody.style.display = "none";
+      emptyState.style.display = "block";
+      assessmentEl.style.display = "none";
+      reviewBadge.className = "badge";
+      reviewBadge.textContent = "Belum ada hasil";
+      statusEl.textContent = "Pilih gambar untuk mulai.";
+      lastJson = null;
+      stopEnrichmentPolling();
+      enrichmentSection.style.display = "none";
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const file = fileInput.files[0];
+      if (!file) {
+        statusEl.textContent = "Pilih gambar dulu.";
+        return;
+      }
+
+      submitButton.disabled = true;
+      statusEl.textContent = "OCR sedang berjalan. Tunggu sampai selesai.";
+      clearRenderedResult("OCR sedang berjalan.");
+      const documentType = document.getElementById("document-type").value;
+      const engineType = document.getElementById("engine-type").value;
+      const processingMode = document.getElementById("processing-mode").value;
+      const vpsApiKey = document.getElementById("vps-api-key").value.trim();
+      const body = new FormData();
+      body.append("file", file);
+
+      try {
+        const endpoint = endpointFor(documentType, engineType, processingMode);
+        if (engineType.startsWith("vps-") && !vpsApiKey) {
+          throw new Error("Isi VPS API Key dulu untuk engine VPS.");
+        }
+        statusEl.textContent = `Mengirim ke ${endpoint}`;
+        const requestStarted = performance.now();
+        const response = await fetch(endpoint, {
+          method: "POST",
+          body,
+          headers: engineType.startsWith("vps-") ? { "X-VPS-API-Key": vpsApiKey } : {}
+        });
+        const roundtripMs = performance.now() - requestStarted;
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "OCR gagal.");
+        renderResult(data, roundtripMs);
+        statusEl.textContent = "OCR selesai.";
+      } catch (error) {
+        clearRenderedResult(error.message);
+        statusEl.textContent = error.message;
+        reviewBadge.className = "badge warn";
+        reviewBadge.textContent = "Gagal";
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+
+    function endpointFor(documentType, engineType, processingMode) {
+      if (engineType === "vps-local") {
+        if (documentType === "KTP") return `/ocr/vps/ktp?mode=${encodeURIComponent(processingMode)}`;
+        if (documentType === "STNK") return `/ocr/vps/stnk?mode=${encodeURIComponent(processingMode)}`;
+        return `/ocr/vps?document_type=${encodeURIComponent(documentType)}&mode=${encodeURIComponent(processingMode)}`;
+      }
+      if (engineType === "vps-agent") {
+        if (documentType === "KTP") return "/ocr/vps/agent/ktp";
+        if (documentType === "STNK") return "/ocr/vps/agent/stnk";
+        return `/ocr/vps/agent?document_type=${encodeURIComponent(documentType)}`;
+      }
+      if (engineType === "agent") {
+        if (documentType === "KTP") return "/ocr/agent/ktp";
+        if (documentType === "STNK") return "/ocr/agent/stnk";
+        return `/ocr/agent?document_type=${encodeURIComponent(documentType)}`;
+      }
+      if (documentType === "KTP") return "/ocr/ktp";
+      if (documentType === "STNK") return `/ocr/stnk?mode=${encodeURIComponent(processingMode)}`;
+      return `/ocr?document_type=${encodeURIComponent(documentType)}`;
+    }
+
+    function clearRenderedResult(message) {
+      stopEnrichmentPolling();
+      resultBody.style.display = "none";
+      emptyState.style.display = "block";
+      emptyState.textContent = message || "Hasil akan muncul setelah OCR selesai.";
+      assessmentEl.style.display = "none";
+      warningsEl.style.display = "none";
+      enrichmentSection.style.display = "none";
+      fieldsBody.innerHTML = "";
+      rawOcr.textContent = "";
+      rawJson.textContent = "";
+      lastJson = null;
+    }
+
+    function renderResult(data, roundtripMs) {
+      stopEnrichmentPolling();
+      lastJson = data;
+      emptyState.style.display = "none";
+      resultBody.style.display = "block";
+      document.getElementById("initial-status").textContent = `Muncul awal dalam ${formatMs(roundtripMs)}`;
+      const input_assessment = data.input_assessment || {};
+      const decision = input_assessment.decision || (data.needs_review ? "needs_review" : "approved_for_auto");
+      reviewBadge.className = decision === "rejected_input" ? "badge bad" : decision === "needs_review" ? "badge warn" : "badge ok";
+      reviewBadge.textContent = decision === "rejected_input" ? "Rejected input" : decision === "needs_review" ? "Needs review" : "Approved";
+      document.getElementById("summary-type").textContent = data.document_type || "-";
+      document.getElementById("summary-tokens").textContent = data.ocr?.token_count ?? "-";
+      document.getElementById("summary-retry").textContent = data.ocr?.preprocess?.retry_count ?? "-";
+      document.getElementById("summary-resolution").textContent = data.ocr?.preprocess?.selected_max_side ?? "-";
+      document.getElementById("summary-warnings").textContent = (data.warnings || []).length;
+      document.getElementById("summary-decision").textContent = decision;
+      document.getElementById("summary-engine-used").textContent = data.agent?.provider || data.ocr?.provider || "-";
+      document.getElementById("summary-auto-publish").textContent = input_assessment.can_auto_publish ? "Yes" : "No";
+      const timings = data.ocr?.timings || {};
+      const selectedAttempt = selectedTimingAttempt(timings);
+      document.getElementById("summary-pipeline-time").textContent = formatMs(timings.total_ms);
+      document.getElementById("summary-ocr-time").textContent = formatMs(selectedAttempt.ocr_ms);
+      document.getElementById("summary-prepare-time").textContent = formatMs(selectedAttempt.prepare_ms);
+      document.getElementById("summary-quality-time").textContent = formatMs(selectedAttempt.quality_ms);
+      document.getElementById("summary-roundtrip-time").textContent = formatMs(roundtripMs);
+
+      const assessmentReasons = input_assessment.reason_codes || [];
+      assessmentEl.style.display = input_assessment.message || assessmentReasons.length ? "block" : "none";
+      assessmentEl.className = decision === "rejected_input" ? "assessment rejected" : decision === "needs_review" ? "assessment review" : "assessment";
+      assessmentEl.textContent = [
+        input_assessment.message || "",
+        assessmentReasons.length ? `Reasons: ${assessmentReasons.join(", ")}` : ""
+      ].filter(Boolean).join(" ");
+
+      const warnings = data.warnings || [];
+      const isProcessingTimeout = warnings.includes("processing_timeout");
+      if (isProcessingTimeout) {
+        document.getElementById("initial-status").textContent = "OCR accurate masih berjalan di background";
+        reviewBadge.className = "badge warn";
+        reviewBadge.textContent = "Processing";
+        assessmentEl.style.display = "block";
+        assessmentEl.className = "assessment review";
+        assessmentEl.textContent = "OCR fast melewati batas checkout. Hasil awal belum berisi field OCR; tunggu Background Enrichment selesai untuk hasil accurate.";
+      }
+      warningsEl.style.display = warnings.length ? "block" : "none";
+      warningsEl.textContent = warnings.length ? warnings.join(", ") : "";
+
+      fieldsBody.innerHTML = "";
+      if (isProcessingTimeout) {
+        const row = document.createElement("tr");
+        row.innerHTML = '<td colspan="4" class="value">Hasil awal belum berisi field OCR. Lihat Background Enrichment setelah status selesai.</td>';
+        fieldsBody.appendChild(row);
+      } else {
+        Object.entries(data.fields || {}).forEach(([key, field]) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${escapeHtml(key)}</td>
+            <td class="value">${escapeHtml(field.value || "-")}</td>
+            <td><span class="field-status ${escapeHtml(field.status || "")}">${escapeHtml(field.status || "-")}</span></td>
+            <td class="confidence">${Number(field.confidence || 0).toFixed(2)}</td>
+          `;
+          fieldsBody.appendChild(row);
+        });
+      }
+
+      rawOcr.textContent = data.ocr?.raw_text_masked || "";
+      rawJson.textContent = JSON.stringify(data, null, 2);
+      renderEnrichmentPending(data.enrichment);
+    }
+
+    copyJson.addEventListener("click", async () => {
+      if (!lastJson) return;
+      await navigator.clipboard.writeText(JSON.stringify(lastJson, null, 2));
+      statusEl.textContent = "JSON disalin ke clipboard.";
+    });
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function selectedTimingAttempt(timings) {
+      const attempts = timings.attempts || [];
+      if (!attempts.length) return {};
+      const selectedIndex = timings.selected_attempt_index ?? attempts.length - 1;
+      return attempts.find((attempt) => attempt.index === selectedIndex) || attempts[attempts.length - 1] || {};
+    }
+
+    function formatMs(value) {
+      if (typeof value !== "number") return "-";
+      if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
+      return `${value.toFixed(0)}ms`;
+    }
+
+    function renderEnrichmentPending(enrichment) {
+      enrichmentSection.style.display = "block";
+      enrichmentFieldsBody.innerHTML = "";
+      enrichmentJson.textContent = JSON.stringify(enrichment || {}, null, 2);
+      const status = enrichment?.status || "not_applicable";
+      document.getElementById("enrichment-summary-status").textContent = status;
+      document.getElementById("enrichment-status").textContent = status === "queued" ? "Menunggu hasil enrichment" : status;
+      document.getElementById("enrichment-processing-time").textContent = "-";
+      document.getElementById("enrichment-ocr-time").textContent = "-";
+      document.getElementById("enrichment-decision").textContent = "-";
+      document.getElementById("enrichment-job-id").textContent = enrichment?.job_id || "-";
+      document.getElementById("enrichment-elapsed").textContent = "-";
+      if (status === "queued" && enrichment.job_id) {
+        pollEnrichment(enrichment.job_id, performance.now(), 0);
+      }
+    }
+
+    async function pollEnrichment(jobId, startedAt, attempt) {
+      document.getElementById("enrichment-elapsed").textContent = formatMs(performance.now() - startedAt);
+      try {
+        const response = await fetch(`/ocr/enrichment/${encodeURIComponent(jobId)}`);
+        const data = await response.json();
+        if (data.status === "completed") {
+          renderEnrichmentResult(data.result, performance.now() - startedAt, jobId);
+          return;
+        }
+      } catch {
+        document.getElementById("enrichment-status").textContent = "Gagal cek enrichment";
+      }
+      if (attempt < 90) {
+        enrichmentPollTimer = setTimeout(() => pollEnrichment(jobId, startedAt, attempt + 1), 2000);
+      }
+    }
+
+    function renderEnrichmentResult(result, elapsedMs, jobId) {
+      const assessment = result?.input_assessment || {};
+      const timings = result?.ocr?.timings || {};
+      const selectedAttempt = selectedTimingAttempt(timings);
+      document.getElementById("enrichment-summary-status").textContent = result?.status || "completed";
+      document.getElementById("enrichment-status").textContent = "Enrichment selesai";
+      statusEl.textContent = "Enrichment selesai. Gunakan hasil Background Enrichment.";
+      reviewBadge.className = assessment.decision === "approved_for_auto" ? "badge ok" : "badge warn";
+      reviewBadge.textContent = "Enrichment selesai";
+      document.getElementById("enrichment-elapsed").textContent = formatMs(elapsedMs);
+      document.getElementById("enrichment-processing-time").textContent = formatMs(result?.processing_time_ms);
+      document.getElementById("enrichment-ocr-time").textContent = formatMs(selectedAttempt.ocr_ms);
+      document.getElementById("enrichment-decision").textContent = assessment.decision || "-";
+      document.getElementById("enrichment-job-id").textContent = jobId;
+      enrichmentFieldsBody.innerHTML = "";
+      Object.entries(result?.fields || {}).forEach(([key, field]) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${escapeHtml(key)}</td>
+          <td class="value">${escapeHtml(field.value || "-")}</td>
+          <td><span class="field-status ${escapeHtml(field.status || "")}">${escapeHtml(field.status || "-")}</span></td>
+          <td class="confidence">${Number(field.confidence || 0).toFixed(2)}</td>
+        `;
+        enrichmentFieldsBody.appendChild(row);
+      });
+      enrichmentJson.textContent = JSON.stringify(result, null, 2);
+    }
+
+    function stopEnrichmentPolling() {
+      if (enrichmentPollTimer) {
+        clearTimeout(enrichmentPollTimer);
+        enrichmentPollTimer = null;
+      }
+    }
+
+    checkHealth();
+  </script>
+</body>
+</html>

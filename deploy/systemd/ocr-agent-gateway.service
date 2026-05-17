@@ -1,0 +1,20 @@
+[Unit]
+Description=OCR Agent Gateway API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ocr-engine
+EnvironmentFile=/opt/ocr-engine/deploy/ocr-engine.env
+Environment=PYTHONPATH=/opt/ocr-engine/src
+Environment="OCR_AGENT_COMMAND=/opt/ocr-engine/.venv-agent/bin/python -m ocr_engine.codex_agent_bridge"
+Environment=OCR_AGENT_TIMEOUT_SECONDS=240
+Environment=OCR_AGENT_CODEX_TIMEOUT_SECONDS=180
+Environment=OCR_AGENT_CODEX_MODEL=gpt-5.4-mini
+ExecStart=/opt/ocr-engine/.venv-agent/bin/uvicorn ocr_engine.api:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
