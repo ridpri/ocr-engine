@@ -16,6 +16,9 @@ class EvalSummaryTests(unittest.TestCase):
                 "document_type": "KTP",
                 "needs_review": False,
                 "processing_time_ms": 100,
+                "stnk_structure_score": 0.92,
+                "stnk_usage_class": "web_usable",
+                "stnk_usage_reasons": [],
                 "input_assessment": {"decision": "approved_for_auto", "can_auto_publish": True},
                 "warnings": [],
                 "fields": {"nik": {"status": "ok"}, "nama": {"status": "ok"}},
@@ -43,6 +46,9 @@ class EvalSummaryTests(unittest.TestCase):
                 "document_type": "KTP",
                 "needs_review": True,
                 "processing_time_ms": 300,
+                "stnk_structure_score": 0.28,
+                "stnk_usage_class": "bad_input",
+                "stnk_usage_reasons": ["document_type_rejected"],
                 "input_assessment": {"decision": "rejected_input", "can_auto_publish": False},
                 "warnings": ["missing_required:nama"],
                 "fields": {"nik": {"status": "ok"}, "nama": {"status": "missing"}},
@@ -74,6 +80,10 @@ class EvalSummaryTests(unittest.TestCase):
         self.assertEqual(summary["decisions"]["rejected_input"], 1)
         self.assertEqual(summary["field_status"]["nama"]["missing"], 1)
         self.assertEqual(summary["warnings"]["missing_required:nama"], 1)
+        self.assertEqual(summary["stnk_usage_classes"]["web_usable"], 1)
+        self.assertEqual(summary["stnk_usage_classes"]["bad_input"], 1)
+        self.assertEqual(summary["stnk_usage_reasons"]["document_type_rejected"], 1)
+        self.assertAlmostEqual(summary["stnk_structure_score"]["avg"], 0.6)
         self.assertEqual(summary["quality_flags"]["screen_or_desktop_capture"], 1)
         self.assertEqual(summary["processing_time_ms"]["avg"], 200)
         self.assertEqual(summary["ocr_tokens"]["avg"], 21)

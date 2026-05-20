@@ -1,14 +1,16 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from ocr_engine.parsers.ktp import parse_ktp_text
 from ocr_engine.parsers.ktp_layout import apply_ktp_layout_hints
+from ocr_engine.postal_code import PostalCodeIndex, PostalCodeMatch
 from ocr_engine.ocr.base import OcrToken
-from ocr_engine.parsers.stnk import parse_stnk_text
+from ocr_engine.parsers.stnk import match_stnk_label, parse_stnk_text, stnk_structure_score
 from ocr_engine.validators import mask_sensitive_text, normalize_nik, validate_plate_number
 
 
@@ -16,6 +18,7 @@ class KtpParserTests(unittest.TestCase):
     def test_parse_ktp_core_fields_from_labelled_text(self):
         raw_text = """
         PROVINSI DKI JAKARTA
+        KOTA ADMINISTRASI JAKARTA PUSAT
         NIK : 3175010101900001
         Nama : BUDI SANTOSO
         Tempat/Tgl Lahir : JAKARTA, 01-01-1990
@@ -34,6 +37,8 @@ class KtpParserTests(unittest.TestCase):
         result = parse_ktp_text(raw_text)
 
         self.assertEqual(result.document_type, "KTP")
+        self.assertEqual(result.fields["provinsi"].value, "DKI JAKARTA")
+        self.assertEqual(result.fields["kabupaten_kota"].value, "JAKARTA PUSAT")
         self.assertEqual(result.fields["nik"].value, "3175010101900001")
         self.assertEqual(result.fields["nik"].status, "ok")
         self.assertEqual(result.fields["nama"].value, "BUDI SANTOSO")
@@ -53,6 +58,125 @@ class KtpParserTests(unittest.TestCase):
         self.assertTrue(result.needs_review)
         self.assertIn("missing_required:nik", result.warnings)
 
+    def test_parse_ktp_reads_joined_province_header(self):
+        raw_text = """
+        PROVINSIJAWA BARAT
+        KABUPATEN BEKASI
+        NIK
+        3216064704060020
+        Nama
+        SALSABILA PUTRI DEWANTI
+        Alamat
+        JL BIMA ASRI X NO.35
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["provinsi"].value, "JAWA BARAT")
+        self.assertEqual(result.fields["provinsi"].status, "ok")
+        self.assertEqual(result.fields["kabupaten_kota"].value, "BEKASI")
+        self.assertEqual(result.fields["kabupaten_kota"].status, "ok")
+
+    def test_parse_ktp_adds_postal_code_from_region_database_lookup(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KABUPATEN BEKASI
+        NIK
+        3216064704060020
+        Nama
+        SALSABILA PUTRI DEWANTI
+        Alamat
+        JL BIMA ASRI X NO.35
+        Kel/Desa
+        LAMBANGSARI
+        Kecamatan
+        TAMBUN SELATAN
+        """
+
+        with patch(
+            "ocr_engine.parsers.ktp.lookup_postal_code",
+            return_value=PostalCodeMatch("17510", 0.95, ["kelurahan_desa:Lambangsari"]),
+        ):
+            result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kode_pos"].value, "17510")
+        self.assertEqual(result.fields["kode_pos"].status, "ok")
+        self.assertEqual(result.fields["kode_pos"].raw, "db_kode_wilayah")
+
+    def test_postal_code_index_matches_ktp_regions_to_kelurahan_code(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "17510",
+                    "address": "Lambangsari, Tambun Selatan, Kabupaten Bekasi, Jawa Barat 17510",
+                    "locality": "Lambangsari",
+                    "sifat_pos": "kel.",
+                    "city_name": "Bekasi",
+                    "province_name": "Jawa Barat",
+                },
+                {
+                    "kode_pos": "17111",
+                    "address": "Bekasi Pasar Baru BEKASI 17111",
+                    "locality": "Bekasi Pasar Baru",
+                    "sifat_pos": "Jln.",
+                    "city_name": "Bekasi",
+                    "province_name": "Jawa Barat",
+                },
+            ]
+        )
+        parsed = parse_ktp_text(
+            """
+            PROVINSI JAWA BARAT
+            KABUPATEN BEKASI
+            NIK 3216064704060020
+            Nama SALSABILA PUTRI DEWANTI
+            Alamat JL BIMA ASRI X NO.35
+            Kel/Desa LAMBANGSARI
+            Kecamatan TAMBUN SELATAN
+            """
+        )
+
+        match = index.lookup(parsed.fields)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kode_pos, "17510")
+
+    def test_parse_ktp_does_not_accept_blood_type_label_as_address(self):
+        raw_text = """
+        PROVINSI BALI
+        NIK
+        5102092505870003
+        Nama
+        IWAYAN QVA ARANTIKA
+        Alamat
+        Gol. Darah
+        Jenis Kelamin
+        LAKI-LAKI
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].status, "missing")
+        self.assertIn("missing_required:alamat", result.warnings)
+
+    def test_parse_ktp_defaults_missing_marital_status_to_belum_kawin(self):
+        raw_text = """
+        PROVINSI BALI
+        NIK
+        5102092505870003
+        Nama
+        IWAYAN QVA ARANTIKA
+        Alamat
+        BUKIT DELIMA VIII/B
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["status_perkawinan"].value, "BELUM KAWIN")
+        self.assertEqual(result.fields["status_perkawinan"].status, "ok")
+        self.assertEqual(result.fields["status_perkawinan"].raw, "fallback:default_marital_status")
+        self.assertLess(result.fields["status_perkawinan"].confidence, 0.5)
+
     def test_parse_ktp_falls_back_to_name_between_nik_and_birth_label(self):
         raw_text = """
         PROVINSI JAWA TENGAH
@@ -68,6 +192,21 @@ class KtpParserTests(unittest.TestCase):
 
         self.assertEqual(result.fields["nama"].value, "DANI ANGGOROWATI")
         self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "KAB.SEMARANG, 02-08-1981")
+
+    def test_parse_ktp_repairs_joined_name_spacing(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KABUPATEN BEKASI
+        NIK : 3216064704060020
+        Nama : TRISUPRIHATIN
+        Tempat/Tgl Lahir : BEKASI, 02-08-1981
+        Alamat : JL BIMA ASRI X NO.35
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "TRI SUPRIHATIN")
+        self.assertEqual(result.fields["nama"].status, "ok")
 
     def test_parse_ktp_falls_back_to_birth_place_and_date_pattern(self):
         raw_text = """
@@ -484,6 +623,8 @@ class KtpParserTests(unittest.TestCase):
             ("BerlakuHingga:SEUMUR HIDUP", "SEUMUR HIDUP"),
             ("Berlaku Hing\nSEUMUR HIDUP", "SEUMUR HIDUP"),
             ("Barlaku Hingga\nSEUMUR HIDUP", "SEUMUR HIDUP"),
+            ("Serfaku Hingga\nSEUMUR HIDUP", "SEUMUR HIDUP"),
+            ("Bertaku Hingga\nSEUMUR HIDUP", "SEUMUR HIDUP"),
             ("Berlaku: Hingga\n25-09-2017", "25-09-2017"),
         ]
         for expiry_text, expected in cases:
@@ -513,7 +654,7 @@ class KtpParserTests(unittest.TestCase):
             OcrToken("LAMBANGSARI", 0.91, bbox=[[250, 520], [430, 520], [430, 545], [250, 545]]),
             OcrToken("Kecamnatan", 0.71, bbox=[[100, 580], [235, 580], [235, 605], [100, 605]]),
             OcrToken("TAMBUNSELATAN", 0.89, bbox=[[250, 580], [500, 580], [500, 605], [250, 605]]),
-            OcrToken("Berlaku Hing", 0.72, bbox=[[100, 820], [260, 820], [260, 845], [100, 845]]),
+            OcrToken("Serfaku Hing", 0.72, bbox=[[100, 820], [260, 820], [260, 845], [100, 845]]),
             OcrToken("SEUMUR HIDUP", 0.91, bbox=[[290, 820], [470, 820], [470, 845], [290, 845]]),
         ]
 
@@ -1124,6 +1265,95 @@ class KtpParserTests(unittest.TestCase):
 
 
 class StnkParserTests(unittest.TestCase):
+    def test_stnk_fuzzy_label_matcher_handles_common_ocr_typos(self):
+        match = match_stnk_label("NOM0R MES1N")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match["field_name"], "nomor_mesin")
+        self.assertGreaterEqual(match["score"], 0.9)
+
+    def test_parse_stnk_uses_fuzzy_labels_for_noisy_required_fields(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        N0MOR P0L1SI : B 1234 ABC
+        NAMA PEM1L1K : BUDI SANTOSO
+        TAHUN PEMBUATAM : 2020
+        N0M0R RANGKA/NIK/VIN : MHRRU1860KJ302319
+        NOM0R MES1N : L15Z61219016
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_polisi"].value, "B 1234 ABC")
+        self.assertEqual(result.fields["nama_pemilik"].value, "BUDI SANTOSO")
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2020")
+        self.assertEqual(result.fields["nomor_rangka"].value, "MHRRU1860KJ302319")
+        self.assertEqual(result.fields["nomor_mesin"].value, "L15Z61219016")
+        self.assertNotIn("missing_required:nomor_mesin", result.warnings)
+
+    def test_parse_stnk_repairs_noisy_tax_sheet_year_and_engine(self):
+        raw_text = """
+        TANDA BUKTI PELUNASAN KEWAJIBAN PEMBAYARAN
+        MORREGSTRASI: B 9335 TYY
+        PT.PP PRESISI
+        HINO
+        DUMPER TR TRO
+        KENDARAAN KHUSUS
+        FMJN1DEGJFM260JDTW
+        JAKARN 8 NOP 2017
+        TABNREGISTRASI :2017:
+        2017
+        NOMOR MES
+        JOBEUFJ87329
+        BERLAKU SAMPA
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2017")
+        self.assertEqual(result.fields["nomor_mesin"].value, "J08EUFJ87329")
+        self.assertNotIn("missing_required:tahun_pembuatan", result.warnings)
+        self.assertNotIn("missing_required:nomor_mesin", result.warnings)
+
+    def test_parse_stnk_repairs_misread_mje_rangka_and_unlabelled_engine(self):
+        raw_text = """
+        TANDA BUKTI PELUNASAN KEWAJIBAN PEMBAYARAN
+        NOMOR REGRSTRAS.: 8 9241 TYX
+        TARIN PEMBUAIAN
+        2018
+        NOMPR PANGKAUNTIK VIN
+        M3ETM67N13JE2515OON
+        NONCR UESN
+        J088UFJ99935
+        BERLAKU SAMPALL 08-10-2023
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2018")
+        self.assertEqual(result.fields["nomor_rangka"].value, "MJETM67N13JE2515O")
+        self.assertEqual(result.fields["nomor_mesin"].value, "J08EUFJ99935")
+        self.assertNotIn("missing_required:nomor_mesin", result.warnings)
+
+    def test_stnk_structure_score_separates_structured_stnk_from_non_stnk_text(self):
+        noisy_stnk = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        N0MOR P0L1SI
+        NAMA PEM1L1K
+        TAHUN PEMBUATAM
+        N0M0R RANGKA/NIK/VIN
+        NOM0R MES1N
+        """
+        ktp_text = """
+        PROVINSI DKI JAKARTA
+        NIK 3175010101900001
+        NAMA BUDI SANTOSO
+        ALAMAT JL MERDEKA
+        """
+
+        self.assertGreaterEqual(stnk_structure_score(noisy_stnk), 0.75)
+        self.assertLess(stnk_structure_score(ktp_text), 0.3)
+
     def test_parse_stnk_core_fields_from_labelled_text(self):
         raw_text = """
         SURAT TANDA NOMOR KENDARAAN BERMOTOR
@@ -1634,6 +1864,490 @@ class StnkParserTests(unittest.TestCase):
         self.assertEqual(result.fields["nomor_mesin"].value, "TZ200XYT3M5018555")
         self.assertEqual(result.fields["berlaku_sampai"].value, "13 Juni 2030")
 
+    def test_parse_stnk_repairs_official_layout_with_untagged_noise_fields(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 1470 KNR
+        NAMA PEMILIK
+        SYUKRI, SE AK
+        BYD
+        WARNA HITAM
+        TIPE & TIPE DAGANG
+        UKE-RWD-M (4X2) AT
+        JENIS
+        MB. PENUMPANG
+        MODEL MINIBUS LISTRIK
+        ISISILINDERDAYALISTRIK 230000 WATT
+        NOMORRANGKANIKVIN LGXCH4CD3S2107503
+        NOMOBMESINMOP PENGGLRAK TZ200XYT3M5018555
+        13 Junt 2030.
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["merek"].value, "BYD")
+        self.assertEqual(result.fields["tipe"].value, "UKE-RWD-M (4X2) AT")
+        self.assertEqual(result.fields["warna"].value, "HITAM")
+        self.assertEqual(result.fields["bahan_bakar"].value, "LISTRIK")
+
+    def test_parse_stnk_prefers_vehicle_brand_near_spec_labels_over_address_noise(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 1470 KNR
+        NAMA PEMILIK
+        SYUKRI, SE AK
+        STNK
+        ALAMAY
+        PERUM BUMI JATIWARINGIN BLK J/13 6 RT 03 RW
+        JATIWARINGIN
+        Kendaraan Baru
+        PONGESAIEAN/NALIDATION
+        BYD
+        WARNA
+        HITAM
+        TIPE & TIPE DAGANG
+        UKE-RWD-M (4X2) AT
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["merek"].value, "BYD")
+
+    def test_parse_stnk_skips_short_noise_between_type_label_and_value(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 1470 KNR
+        NAMA PEMILIK
+        SYUKRI, SE AK
+        BYD
+        WARNA
+        HITAM
+        TIPE & TIPE DAGANG
+        ren
+        UKE-RWD-M (4X2) AT
+        JENIS
+        MB. PENUMPANG
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "UKE-RWD-M (4X2) AT")
+
+    def test_parse_stnk_skips_color_between_type_label_and_value(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 9207 TYZ
+        TYPE E
+        KUNING
+        KENDARAAN KHUSUS
+        WARNA TNKB
+        JENISRY Y
+        2018
+        DUMPER TR TRO
+        FM8JN1D-EGJ/FM26OJAHAN BAKAR
+        SOLAR
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "FM8JN1D-EGJ/FM26OJAHAN BAKAR")
+
+    def test_parse_stnk_skips_color_label_between_type_label_and_value(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 9238 TYZ
+        TYPE
+        WARNA
+        HIJAU
+        FM8JN1D-EGJ/FM26OJAHANBAKAR
+        GENISY Y
+        KENDARAAN KHUSUS
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "FM8JN1D-EGJ/FM26OJAHANBAKAR")
+
+    def test_parse_stnk_prefers_engine_before_noisy_official_engine_label(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 9207 TYZ
+        NOMOR RANGKA/NIK/VIN
+        MJEFM8JN1JJE13133
+        JO8EUFJ99909
+        NOMOR MESIN
+        DATE OF EXPIRE
+        B 2039135
+        BERLAKU SAMPAI
+        13 Juli 2028
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "JO8EUFJ99909")
+
+    def test_parse_stnk_repairs_type_when_value_appears_before_type_label(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 9239 TYZ
+        MERK
+        HINO
+        FM8JN1D-EGJ/FM26OJ0SUNER
+        BIAYA ADM STNK
+        TYPE
+        JENIS
+        KENDARAAN KHUSUS
+        BAHAN BAKAR
+        SOLAR
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "FM8JN1D-EGJ/FM26OJ0SUNER")
+
+    def test_parse_stnk_repairs_tax_receipt_type_when_value_appears_before_type_label(self):
+        raw_text = """
+        NOMOR POLISI
+        8 9239
+        TYZ
+        MERK
+        HINO
+        FM8JN1D-EGJ/FM26OJ0SUNER
+        BIAYA ADM STNK
+        TYPE
+        JENIS
+        KENDARAAN KHUSUS
+        BAHAN BAKAR
+        SOLAR
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "FM8JN1D-EGJ/FM26OJ0SUNER")
+
+    def test_parse_stnk_repairs_type_from_typee_label(self):
+        raw_text = """
+        TYPEE
+        CX-3 SWGNRIID(CL200OPAIANPAKR2ERA
+        RENSIN
+        JENIS
+        MB. PENUMPANG
+        TAHUN PEMBUATAN
+        2017
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "CX-3 SWGNRIID(CL200OPAIANPAKR2ERA")
+
+    def test_parse_stnk_repairs_type_from_model_block_textual_value(self):
+        raw_text = """
+        MOBIL PENUMPA
+        BAHAN BAM
+        JENIS
+        WARNA TNKB
+        HITAM
+        JEEP L.C.HDTP
+        2022
+        MODEL
+        TAHUN REGISTRASI
+        TAHUN PEMBUATAN
+        2014
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "JEEP L.C.HDTP")
+
+    def test_parse_stnk_strips_merged_fuel_label_from_type_value(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NOMOR REGISTRASI
+        B 9757 TYZ
+        TYPE
+        FM8JN1D-EGJ/FM260JBAHAN BAKAR
+        SOLAR
+        TAHUN PEMBUATAN
+        2018
+        NOMOR MESIN
+        J08EUFR03596
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "FM8JN1D-EGJ/FM260J")
+
+    def test_parse_stnk_strips_merged_fuel_energy_label_from_type_value(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NOMOR REGISTRASI
+        B 9337 TYY
+        TIPE
+        FM8JN20-EGJ/FM26OJBAHAN BAKARSUMBER ENERG
+        SOLAR
+        TAHUN PEMBUATAN
+        2017
+        NOMOR MESIN
+        J08EUP187047
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tipe"].value, "FM8JN20-EGJ/FM26OJ")
+
+    def test_parse_stnk_repairs_year_before_noisy_manufacture_year_value(self):
+        raw_text = """
+        MODEL
+        MBL TANGKI
+        2019
+        REGISTR
+        P0350367
+        TAHUN PEMBUATAN
+        04009
+        NOMOR RANGKA/NIK/VIN
+        MJEC1J643K5177618
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2019")
+
+    def test_parse_stnk_repairs_year_after_fuzzy_manufacture_year_label(self):
+        raw_text = """
+        MODEL
+        TAHUN PENBUATIN
+        TAHIN REGSTRASI
+        2017
+        2017
+        2024
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2017")
+
+    def test_parse_stnk_repairs_year_from_perakitan_slash_pair(self):
+        raw_text = """
+        TAHUN PEMBUATANPERAKITAN:
+        2024/2024
+        NOMOR RANGKANIK:
+        MFJ831540RJ003682
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2024")
+
+    def test_parse_stnk_repairs_owner_from_noisy_mapemilik_label(self):
+        raw_text = """
+        MOR POLISI
+        B 2008 BRG
+        MAPEMILIK
+        SARAFUDDIN
+        AMAT
+        RELA NO2 RT7/9 MENTENG ATAS
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nama_pemilik"].value, "SARAFUDDIN")
+
+    def test_parse_stnk_does_not_use_vehicle_brand_as_owner_after_noisy_owner_line(self):
+        raw_text = """
+        NAMA PEMILIK
+        1.
+        PUSPITA FEBYRIZKI NUGRONMTTAKEA J324WYONUGROI0, 1
+        A ALAMAT
+        KP PLUMBUNGAN RT/RW 003/002
+        MERK
+        TOYOTA
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertNotEqual(result.fields["nama_pemilik"].value, "TOYOTA")
+
+    def test_parse_stnk_repairs_rangka_from_noisy_official_nik_line(self):
+        raw_text = """
+        SAMSAT PROVINSI
+        NIK
+        NM0RW00MINMJEFM8JN1.3JE237:49CEMT
+        NOMORMESN
+        J08EUFJ97272
+        BERLAKU SAMPAI
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_rangka"].value, "MJEFM8JN13JE23749")
+
+    def test_parse_stnk_repairs_engine_from_noisy_mein_label(self):
+        raw_text = """
+        NOMOR BANGKANIKVIN
+        MJEC1J643K5177618
+        NOMOR MEIN
+        WO4DTRR67339
+        BERLAKU SAMPAI:02-04-2024
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "WO4DTRR67339")
+
+    def test_parse_stnk_prefers_hino_engine_over_short_noise_fragment(self):
+        raw_text = """
+        MMAVIN
+        4ON00
+        HOMPR MESIN
+        J08EUF399904
+        BERLAKU SAMPAI
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "J08EUF399904")
+
+    def test_parse_stnk_repairs_engine_before_fuzzy_mesin_label(self):
+        raw_text = """
+        NOMORBANGKANIKAVIN
+        MJEFH8JN1JJE27720
+        J08EUFR03596
+        NOMOR MESIY
+        SERLAKUSAMPAI27-03 2024
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "J08EUFR03596")
+
+    def test_parse_stnk_repairs_engine_from_truncated_esin_label(self):
+        raw_text = """
+        WGKANKVNMMLAA4261LG013433
+        ESIN
+        15E4EAFTL3040017
+        BERLAKU SAMPAI
+        13-11-2025
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "15E4EAFTL3040017")
+
+    def test_parse_stnk_keeps_labelled_engine_over_kode_lokasi_fragment(self):
+        raw_text = """
+        KODE LOKASI
+        0064/U3/190919
+        NOMOR RANGKANIK/VIN
+        MHFJB8GS7K1575086
+        BERLAKU SAMPAI:
+        19-09-024
+        NOMOR MESIN
+        2GDC623732
+        DATE OF EXPIRE
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "2GDC623732")
+
+    def test_parse_stnk_does_not_use_mfj_rangka_as_engine(self):
+        raw_text = """
+        NOMOR RANGKANIK:
+        MFJ831540RJ003682
+        NOMOR MESIN
+        400959D0164403
+        X/ARPOLIS1NRP.75061073
+        [13:51:53#18-12-2025#Rp.
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "400959D0164403")
+
+    def test_parse_stnk_prefers_stronger_engine_candidate_over_short_fragment(self):
+        raw_text = """
+        NOMOR RANGKA/NIK/VIN
+        MPAUCR86GETO0010
+        NOMOR MESIN
+        G0398
+        LatfUsman, S.L.K, M.Ham.
+        550 002
+        BERLAKU SAMPAI
+        21-12-2024
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "550002")
+
+    def test_parse_stnk_prefers_engine_after_label_over_registration_sequence_before_label(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NOMOR REGISTRASI
+        B 9241 TYZ
+        NOMOR RANGKA NIKVIN:
+        MJEM8JNJE25150
+        NO URUT PENDAFTARAN
+        /U35/0810
+        NOMOR MESIN
+        J08EUFJ99935
+        BERLAKU SAMPAI: 08-10-2023
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "J08EUFJ99935")
+
+    def test_parse_stnk_ignores_tnkb_color_when_vehicle_color_appears_later(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 9170 TYY
+        MERK
+        HINO
+        WARNA TNKB
+        KUNING
+        MODEL
+        DUMPER TR TRO
+        WARNA
+        MJEFM8JN1HJE16631
+        HIJAU
+        IDENT
+        5G4913LL552NY
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["warna"].value, "HIJAU")
+
+    def test_parse_stnk_tax_sheet_ignores_tnkb_color_when_vehicle_color_appears_later(self):
+        raw_text = """
+        NOMOR POLISI
+        B 9170 TYY
+        MERK
+        HINO
+        WARNA TNKB
+        KUNING
+        MODEL
+        DUMPER TR TRO
+        WARNA
+        MJEFM8JN1HJE16631
+        HIJAU
+        IDENT
+        5G4913LL552NY
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["warna"].value, "HIJAU")
+
     def test_parse_stnk_does_not_overwrite_labelled_values_with_noisy_official_tail(self):
         raw_text = """
         NO POLISI : B 1234 ABC
@@ -1655,6 +2369,175 @@ class StnkParserTests(unittest.TestCase):
         self.assertEqual(result.fields["nomor_polisi"].value, "B 1234 ABC")
         self.assertEqual(result.fields["nama_pemilik"].value, "BUDI SANTOSO")
         self.assertEqual(result.fields["nomor_mesin"].value, "L15Z61219016")
+
+    def test_parse_stnk_repairs_year_from_standalone_value_before_noisy_registration_label(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NRKB
+        B 1470 KNR
+        NAMA PEMILIK
+        SYUKRI, SE AK
+        MODEL
+        MINIBUS LISTRIK
+        WAARNATNM
+        HITAM
+        2025
+        TAHUN REGISTRASH
+        2025
+        NOMORRANGKAUNIKAIN
+        LGXCH4CD3S2107503
+        NIMOBMESINMOTPOR PENGAGLRLAK
+        TZ200XYT3M5018555
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2025")
+        self.assertEqual(result.fields["tahun_pembuatan"].status, "ok")
+
+    def test_parse_stnk_repairs_expiry_date_after_noisy_expiry_label_and_engine_label(self):
+        for month_ocr in ["Jund", "Junt"]:
+            with self.subTest(month_ocr=month_ocr):
+                raw_text = f"""
+                SURAT TANDA NOMOR KENDARAAN BERMOTOR
+                NRKB
+                B 1470 KNR
+                NAMA PEMILIK
+                SYUKRI, SE AK
+                TAHUN REGISTRASH
+                2025
+                NOMORRANGKAUNIKAIN
+                LGXCH4CD3S2107503
+                BERLAKU SAMPALDATE OF CRPI
+                NIMOBMESINMOTPOR PENGAGLRLAK
+                TZ200XYT3M5018555
+                13 {month_ocr} 2030.
+                """
+
+                result = parse_stnk_text(raw_text)
+
+                self.assertEqual(result.fields["berlaku_sampai"].value, "13 Juni 2030")
+                self.assertEqual(result.fields["berlaku_sampai"].raw, "official_section:berlaku_sampai")
+
+    def test_parse_stnk_repairs_year_from_noisy_manufacture_pair_line(self):
+        raw_text = """
+        UERNITYPE
+        KADA/BIANTE 2.0L 6A/T
+        JENISMCOEL
+        NINIBUS
+        AMNPERATNAMIN 2013/2013
+        NOMOR MESIN
+        PE30607980
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2013")
+
+    def test_parse_stnk_keeps_engine_after_label_over_kode_fragment(self):
+        raw_text = """
+        KODE LKASC06GZ111NI
+        NOMOR RANGKA/NIK/VIN
+        MHDH3BA1S6J123456
+        NOMOR MESIN
+        L15714731905
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "L15714731905")
+
+    def test_parse_stnk_reads_engine_value_with_leading_colon_after_label(self):
+        raw_text = """
+        Nomor mesin
+        :64FL5Q55|002
+        10) Warna kendaraan
+        HITAM METALIK
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_mesin"].value, "64FL5Q55002")
+
+    def test_parse_stnk_repairs_plate_suffix_digit_before_type_block(self):
+        raw_text = """
+        NOMOR POLISI
+        B 2073 BB5
+        TYPE
+        3201
+        N20 CKD AT
+        NOMOR MESIN
+        A4270791
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_polisi"].value, "B 2073 BBS")
+
+    def test_parse_stnk_repairs_split_registration_plate_and_ignores_address_rt_rw(self):
+        raw_text = """
+        NOMOR REGISTRASI
+        F
+        1159 AE
+        ALAMAT
+        JL RAYA TAMAN CIMANGGU NO 59 RT OO1 RW O-
+        NO REGISTRASI LAMA:
+        B
+        2937 KFL
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_polisi"].value, "F 1159 AE")
+
+    def test_parse_stnk_prefers_stronger_plate_candidate_over_short_noise(self):
+        raw_text = """
+        .11
+        AETRO JAY
+        NAMA PEMILIK
+        VENICA
+        B 1686 03
+        NUNER
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_polisi"].value, "B 1686 OJ")
+        self.assertEqual(result.fields["nama_pemilik"].value, "VENICA")
+
+    def test_parse_stnk_prefers_bilingual_owner_over_role_noise(self):
+        raw_text = """
+        NOMOR REGISTRASI
+        B 1484 UNP
+        NAMA PEMILIK
+        ARD
+        KEPALA
+        2
+        STNK
+        NAME OF OWNER
+        LAURA SANTOSO
+        ALAMAT
+        RUKO GDG BUKIT INDAH
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nama_pemilik"].value, "LAURA SANTOSO")
+
+    def test_parse_stnk_prefers_company_owner_over_region_noise(self):
+        raw_text = """
+        NAMA PEMILIK
+        NO. KOHIR
+        BANDUNG I PDJDJRAN
+        Jawa Barat
+        FT JASUKA BANGUN PRATANA
+        NIK/NO. HP
+        91203089XXXXX
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nama_pemilik"].value, "PT JASUKA BANGUN PRATANA")
 
 
 class ValidatorTests(unittest.TestCase):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 
 SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -27,6 +27,29 @@ def prepare_image(input_path: str | Path, output_path: str | Path, max_side: int
     return output_path
 
 
+def prepare_stnk_full_page_image(
+    input_path: str | Path,
+    output_path: str | Path,
+    max_side: int = 1600,
+    min_long_side: int = 1600,
+) -> Path:
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    with Image.open(input_path) as image:
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        width, height = image.size
+        long_side = max(width, height)
+        if long_side < min_long_side:
+            scale = min_long_side / max(long_side, 1)
+            image = image.resize((round(width * scale), round(height * scale)), Image.Resampling.LANCZOS)
+        image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        image = ImageEnhance.Contrast(image).enhance(1.15)
+        image = ImageEnhance.Sharpness(image).enhance(1.2)
+        image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=90, threshold=3))
+        image.save(output_path, format="JPEG", quality=94, optimize=True)
+    return output_path
+
+
 def prepare_stnk_fast_roi_image(input_path: str | Path, output_path: str | Path, max_side: int = 1200) -> Path:
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -36,5 +59,23 @@ def prepare_stnk_fast_roi_image(input_path: str | Path, output_path: str | Path,
         width, height = image.size
         bottom_ratio = 0.88
         roi = image.crop((0, 0, width, max(1, int(height * bottom_ratio))))
+        roi.save(output_path, format="JPEG", quality=92, optimize=True)
+    return output_path
+
+
+def prepare_stnk_official_roi_image(
+    input_path: str | Path,
+    output_path: str | Path,
+    max_side: int = 1200,
+    top_ratio: float = 0.55,
+) -> Path:
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    with Image.open(input_path) as image:
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        width, height = image.size
+        top = min(height - 1, max(0, int(height * top_ratio)))
+        roi = image.crop((0, top, width, height))
         roi.save(output_path, format="JPEG", quality=92, optimize=True)
     return output_path

@@ -13,6 +13,7 @@ class FieldResult:
     status: FieldStatus
     evidence: list[str] = field(default_factory=list)
     raw: str | None = None
+    metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -13,6 +13,8 @@ from pathlib import Path
 
 KTP_FIELDS = [
     "nik",
+    "provinsi",
+    "kabupaten_kota",
     "nama",
     "tempat_tanggal_lahir",
     "jenis_kelamin",
@@ -24,6 +26,7 @@ KTP_FIELDS = [
     "status_perkawinan",
     "pekerjaan",
     "kewarganegaraan",
+    "kode_pos",
     "berlaku_hingga",
 ]
 STNK_FIELDS = [

@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from PIL import Image
@@ -146,6 +147,15 @@ class KtpLayoutProvider:
         )
 
 
+class EmptyTextProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def extract_text(self, image_path: str) -> OcrResult:
+        self.calls += 1
+        return OcrResult(raw_text="", tokens=[], provider="fake")
+
+
 def _write_textured_image(image_path: Path, size: tuple[int, int] = (900, 600)) -> None:
     width, height = size
     image = Image.new("RGB", size, "white")
@@ -207,15 +217,17 @@ class CliEvalTests(unittest.TestCase):
         self.assertFalse(record["ocr"]["nik_fallback"]["attempted"])
         self.assertEqual(provider.calls, 1)
 
-    def test_stnk_uses_smaller_prepared_image_for_speed(self):
+    def test_stnk_accurate_uses_official_section_roi_first(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "stnk.jpg"
             Image.new("RGB", (1800, 1200), "white").save(image_path)
             provider = SizeRecordingProvider()
 
-            _process_file(provider, image_path, "STNK")
+            record = _process_file(provider, image_path, "STNK")
 
         self.assertEqual(max(provider.seen_sizes[0]), 1200)
+        self.assertLess(provider.seen_sizes[0][1], 400)
+        self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_official_roi")
 
     def test_stnk_fast_mode_uses_smaller_roi_image(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -225,7 +237,7 @@ class CliEvalTests(unittest.TestCase):
 
             record = _process_file(provider, image_path, "STNK", mode="fast")
 
-        self.assertEqual(max(provider.seen_sizes[0]), 512)
+        self.assertEqual(max(provider.seen_sizes[0]), 720)
         self.assertLess(provider.seen_sizes[0][1], 460)
         self.assertEqual(record["ocr"]["processing_mode"], "fast")
         self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_fast_roi")
@@ -240,7 +252,7 @@ class CliEvalTests(unittest.TestCase):
             fast_record = _process_file(fast_provider, image_path, "KTP", mode="fast")
             accurate_record = _process_file(accurate_provider, image_path, "KTP", mode="accurate")
 
-        self.assertEqual(max(fast_provider.seen_sizes[0]), 960)
+        self.assertEqual(max(fast_provider.seen_sizes[0]), 720)
         self.assertEqual(max(accurate_provider.seen_sizes[0]), 1280)
         self.assertEqual(fast_record["ocr"]["processing_mode"], "fast")
         self.assertEqual(accurate_record["ocr"]["processing_mode"], "accurate")
@@ -255,6 +267,18 @@ class CliEvalTests(unittest.TestCase):
         self.assertEqual(record["fields"]["kewarganegaraan"]["value"], "WNI")
         self.assertEqual(record["fields"]["kewarganegaraan"]["status"], "ok")
 
+    def test_ktp_empty_ocr_does_not_run_expensive_nik_fallback(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "ktp.jpg"
+            _write_textured_image(image_path)
+            provider = EmptyTextProvider()
+
+            record = _process_file(provider, image_path, "KTP", mode="fast")
+
+        self.assertEqual(record["input_assessment"]["decision"], "rejected_input")
+        self.assertFalse(record["ocr"]["nik_fallback"]["attempted"])
+        self.assertEqual(provider.calls, 1)
+
     def test_stnk_fast_mode_returns_initial_roi_without_sync_full_page_fallback(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "stnk.jpg"
@@ -263,9 +287,9 @@ class CliEvalTests(unittest.TestCase):
 
             record = _process_file(provider, image_path, "STNK", mode="fast")
 
-        self.assertEqual([max(size) for size in provider.seen_sizes], [512])
+        self.assertEqual([max(size) for size in provider.seen_sizes], [720])
         self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_fast_roi")
-        self.assertEqual(record["ocr"]["preprocess"]["selected_max_side"], 512)
+        self.assertEqual(record["ocr"]["preprocess"]["selected_max_side"], 720)
         self.assertEqual(record["ocr"]["preprocess"]["retry_count"], 0)
         self.assertEqual(record["input_assessment"]["decision"], "needs_review")
         self.assertTrue(record["needs_review"])
@@ -278,12 +302,12 @@ class CliEvalTests(unittest.TestCase):
 
             record = _process_file(provider, image_path, "STNK")
 
-        self.assertEqual([max(size) for size in provider.seen_sizes], [1200, 1280])
+        self.assertEqual([max(size) for size in provider.seen_sizes], [1200, 1600])
         self.assertEqual(record["fields"]["tahun_pembuatan"]["value"], "2020")
         self.assertEqual(record["fields"]["nomor_rangka"]["value"], "MHRRU1860KJ302319")
         self.assertEqual(record["fields"]["nomor_mesin"]["value"], "L15Z61219016")
         self.assertEqual(record["input_assessment"]["decision"], "approved_for_auto")
-        self.assertEqual(record["ocr"]["preprocess"]["selected_max_side"], 1280)
+        self.assertEqual(record["ocr"]["preprocess"]["selected_max_side"], 1600)
         self.assertEqual(record["ocr"]["preprocess"]["retry_count"], 1)
 
     def test_stnk_does_not_retry_when_fast_pass_is_already_approved(self):
@@ -299,7 +323,7 @@ class CliEvalTests(unittest.TestCase):
         self.assertEqual(record["ocr"]["preprocess"]["selected_max_side"], 1200)
         self.assertEqual(record["ocr"]["preprocess"]["retry_count"], 0)
 
-    def test_stnk_does_not_retry_highres_when_source_has_minimal_resolution_headroom(self):
+    def test_stnk_retries_enhanced_full_page_even_when_source_has_minimal_resolution_headroom(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "stnk.jpg"
             _write_textured_image(image_path, size=(1280, 720))
@@ -307,8 +331,20 @@ class CliEvalTests(unittest.TestCase):
 
             record = _process_file(provider, image_path, "STNK")
 
-        self.assertEqual([max(size) for size in provider.seen_sizes], [1200])
-        self.assertEqual(record["ocr"]["preprocess"]["retry_count"], 0)
+        self.assertEqual([max(size) for size in provider.seen_sizes], [1200, 1600])
+        self.assertEqual(record["ocr"]["preprocess"]["attempts"][1]["strategy"], "stnk_full_page")
+        self.assertEqual(record["ocr"]["preprocess"]["retry_count"], 1)
+
+    def test_process_file_adds_stnk_structure_score_and_usage_class(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "stnk.jpg"
+            _write_textured_image(image_path, size=(1800, 1200))
+
+            record = _process_file(CompleteStnkProvider(), image_path, "STNK")
+
+        self.assertGreaterEqual(record["stnk_structure_score"], 0.7)
+        self.assertEqual(record["stnk_usage_class"], "web_usable")
+        self.assertEqual(record["stnk_usage_reasons"], [])
 
 
 if __name__ == "__main__":

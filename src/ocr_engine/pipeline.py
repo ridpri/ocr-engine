@@ -4,16 +4,18 @@ from dataclasses import dataclass
 from pathlib import Path
 import time
 
-from PIL import Image, ImageOps
-
-from ocr_engine.image_utils import prepare_image, prepare_stnk_fast_roi_image
+from ocr_engine.image_utils import (
+    prepare_image,
+    prepare_stnk_fast_roi_image,
+    prepare_stnk_full_page_image,
+    prepare_stnk_official_roi_image,
+)
 from ocr_engine.nik_image_fallback import repair_ktp_nik_from_image
 from ocr_engine.ocr.base import OcrProvider, OcrResult
 from ocr_engine.parsers.ktp_layout import apply_ktp_layout_hints
 from ocr_engine.quality import analyze_image_quality
 from ocr_engine.schemas import DocumentResult
 from ocr_engine.service import (
-    STNK_RETRY_PREPARE_MAX_SIDE,
     build_input_assessment,
     choose_parse_document_type,
     document_result_score,
@@ -24,9 +26,10 @@ from ocr_engine.service import (
 )
 
 
-STNK_RETRY_SOURCE_HEADROOM_RATIO = 1.25
-STNK_FAST_ROI_MAX_SIDE = 512
-KTP_FAST_MAX_SIDE = 960
+STNK_OFFICIAL_ROI_MAX_SIDE = 1200
+STNK_FAST_ROI_MAX_SIDE = 720
+STNK_FULL_PAGE_MAX_SIDE = 1600
+KTP_FAST_MAX_SIDE = 720
 
 
 @dataclass(slots=True)
@@ -60,11 +63,13 @@ def run_ocr_pipeline(
     requested_document_type: str,
     workdir: Path,
     processing_mode: str = "accurate",
+    run_nik_fallback: bool = True,
+    force_strategy: str | None = None,
 ) -> OcrPipelineResult:
     pipeline_started = time.perf_counter()
     mode = _normalize_processing_mode(processing_mode)
     attempts: list[_OcrAttempt] = []
-    first_strategy = _first_attempt_strategy(requested_document_type, mode)
+    first_strategy = force_strategy or _first_attempt_strategy(requested_document_type, mode)
     first_max_side = _first_attempt_max_side(requested_document_type, mode, first_strategy)
     attempts.append(
         _run_attempt(
@@ -80,9 +85,10 @@ def run_ocr_pipeline(
 
     first = attempts[0]
     if (
+        force_strategy is None
+        and
         mode == "accurate"
         and should_retry_stnk_highres(requested_document_type, first.parsed, first.assessment)
-        and _has_stnk_retry_headroom(raw_path)
     ):
         attempts.append(
             _run_attempt(
@@ -91,15 +97,15 @@ def run_ocr_pipeline(
                 raw_path,
                 workdir / "prepared-stnk-retry.jpg",
                 requested_document_type,
-                STNK_RETRY_PREPARE_MAX_SIDE,
-                "full_page",
+                STNK_FULL_PAGE_MAX_SIDE,
+                "stnk_full_page",
             )
         )
 
     selected = max(attempts, key=lambda attempt: document_result_score(attempt.parsed, attempt.assessment))
     nik_fallback = {"attempted": False, "passes": 0, "value": None}
     nik_fallback_started = time.perf_counter()
-    if should_run_ktp_nik_fallback(requested_document_type, selected.parsed.document_type):
+    if _should_attempt_ktp_nik_image_fallback(run_nik_fallback, requested_document_type, selected):
         nik_fallback = repair_ktp_nik_from_image(provider, raw_path, selected.parsed, workdir / "nik-fallback")
     nik_fallback_ms = _elapsed_ms(nik_fallback_started)
 
@@ -124,6 +130,20 @@ def run_ocr_pipeline(
     )
 
 
+def _should_attempt_ktp_nik_image_fallback(
+    run_nik_fallback: bool,
+    requested_document_type: str | None,
+    selected: _OcrAttempt,
+) -> bool:
+    if not run_nik_fallback:
+        return False
+    if not selected.ocr_result.tokens:
+        return False
+    if selected.detected_type == "UNKNOWN" and selected.assessment.get("decision") == "rejected_input":
+        return False
+    return should_run_ktp_nik_fallback(requested_document_type, selected.parsed.document_type)
+
+
 def _run_attempt(
     index: int,
     provider: OcrProvider,
@@ -137,6 +157,10 @@ def _run_attempt(
     stage_started = time.perf_counter()
     if strategy == "stnk_fast_roi":
         prepare_stnk_fast_roi_image(raw_path, prepared_path, max_side=max_side)
+    elif strategy == "stnk_official_roi":
+        prepare_stnk_official_roi_image(raw_path, prepared_path, max_side=max_side)
+    elif strategy == "stnk_full_page":
+        prepare_stnk_full_page_image(raw_path, prepared_path, max_side=max_side)
     else:
         prepare_image(raw_path, prepared_path, max_side=max_side)
     prepare_ms = _elapsed_ms(stage_started)
@@ -196,12 +220,6 @@ def _attempt_summary(attempt: _OcrAttempt) -> dict:
     }
 
 
-def _has_stnk_retry_headroom(raw_path: Path) -> bool:
-    with Image.open(raw_path) as image:
-        image = ImageOps.exif_transpose(image)
-        return max(image.size) > STNK_RETRY_PREPARE_MAX_SIDE * STNK_RETRY_SOURCE_HEADROOM_RATIO
-
-
 def _elapsed_ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000, 2)
 
@@ -217,13 +235,19 @@ def _first_attempt_strategy(requested_document_type: str | None, processing_mode
     requested = requested_document_type.upper() if requested_document_type else "AUTO"
     if requested == "STNK" and processing_mode == "fast":
         return "stnk_fast_roi"
+    if requested == "STNK":
+        return "stnk_official_roi"
     return "full_page"
 
 
 def _first_attempt_max_side(requested_document_type: str | None, processing_mode: str, strategy: str) -> int:
     requested = requested_document_type.upper() if requested_document_type else "AUTO"
+    if strategy == "stnk_official_roi":
+        return STNK_OFFICIAL_ROI_MAX_SIDE
     if strategy == "stnk_fast_roi":
         return STNK_FAST_ROI_MAX_SIDE
     if requested == "KTP" and processing_mode == "fast":
         return KTP_FAST_MAX_SIDE
+    if strategy == "stnk_full_page":
+        return STNK_FULL_PAGE_MAX_SIDE
     return select_prepare_max_side(requested_document_type)

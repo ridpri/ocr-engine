@@ -10,9 +10,12 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> dict:
     decisions: Counter[str] = Counter()
     warnings: Counter[str] = Counter()
     quality_flags: Counter[str] = Counter()
+    stnk_usage_classes: Counter[str] = Counter()
+    stnk_usage_reasons: Counter[str] = Counter()
     document_types: Counter[str] = Counter()
     field_status: dict[str, Counter[str]] = defaultdict(Counter)
     processing_times: list[float] = []
+    stnk_structure_scores: list[float] = []
     token_counts: list[float] = []
     retry_counts: list[float] = []
     selected_max_sides: list[float] = []
@@ -31,11 +34,15 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> dict:
         assessment = row.get("input_assessment") or {}
         decisions[assessment.get("decision", "unknown")] += 1
         warnings.update(row.get("warnings") or [])
+        if row.get("stnk_usage_class"):
+            stnk_usage_classes[str(row.get("stnk_usage_class"))] += 1
+        stnk_usage_reasons.update(row.get("stnk_usage_reasons") or [])
         for flag in (row.get("quality") or {}).get("flags") or []:
             quality_flags[flag] += 1
         for field_name, field in (row.get("fields") or {}).items():
             field_status[field_name][field.get("status", "unknown")] += 1
         _append_number(processing_times, row.get("processing_time_ms"))
+        _append_number(stnk_structure_scores, row.get("stnk_structure_score"))
         ocr = row.get("ocr") or {}
         preprocess = ocr.get("preprocess") or {}
         _append_number(token_counts, ocr.get("token_count"))
@@ -59,8 +66,11 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> dict:
         "decisions": dict(decisions),
         "warnings": dict(warnings),
         "quality_flags": dict(quality_flags),
+        "stnk_usage_classes": dict(stnk_usage_classes),
+        "stnk_usage_reasons": dict(stnk_usage_reasons),
         "field_status": {field: dict(statuses) for field, statuses in field_status.items()},
         "processing_time_ms": _number_summary(processing_times),
+        "stnk_structure_score": _number_summary(stnk_structure_scores),
         "ocr_tokens": _number_summary(token_counts),
         "ocr_retry_count": _number_summary(retry_counts),
         "selected_max_side": _number_summary(selected_max_sides),

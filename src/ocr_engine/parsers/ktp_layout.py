@@ -33,7 +33,7 @@ def apply_ktp_layout_hints(parsed: DocumentResult, tokens: list[OcrToken]) -> Do
 def _repair_marital_status(parsed: DocumentResult, tokens: list[_PositionedToken]) -> None:
     field = parsed.fields.get("status_perkawinan")
     current = _normalize_marital_status(field.value if field else None)
-    if current:
+    if current and not _is_default_marital_status(field):
         parsed.fields["status_perkawinan"] = _ok(current, 0.88)
         return
 
@@ -48,6 +48,10 @@ def _repair_marital_status(parsed: DocumentResult, tokens: list[_PositionedToken
         if normalized:
             parsed.fields["status_perkawinan"] = _ok(normalized, 0.78)
             return
+
+
+def _is_default_marital_status(field: FieldResult | None) -> bool:
+    return bool(field and field.raw == "fallback:default_marital_status")
 
 
 def _repair_citizenship(parsed: DocumentResult, tokens: list[_PositionedToken]) -> None:
@@ -284,7 +288,7 @@ def _expiry_value_from_line_tokens(line: list[_PositionedToken]) -> str | None:
 
 
 def _expiry_from_inline_label(line: str) -> str | None:
-    label = r"(?:BERLAK\w*|BARLAK\w*|BERLAKY|BORLAK\w*|BERBAKY|BERFAKU|BERFAK\w*|BARTARAR|NAKU)"
+    label = r"(?:BERLAK\w*|BARLAK\w*|BERLAKY|BORLAK\w*|BERBAKY|BERFAKU|BERFAK\w*|SERFAKU|SERFAK\w*|BERTAKU|BERTAK\w*|BARTARAR|NAKU)"
     match = re.search(rf"{label}\s*:?\s*(?:HING\w*|HIN\w*|HNOG\w*)?\s*[:_\-]?\s*(.*)$", line, flags=re.IGNORECASE)
     if not match:
         return None
@@ -309,8 +313,8 @@ def _normalize_expiry(value: str | None) -> str | None:
 
 def _is_expiry_label(value: str) -> bool:
     compact = re.sub(r"[^A-Z]", "", value.upper())
-    has_prefix = any(prefix in compact for prefix in ["BERLAKU", "BARLAKU", "BERLAKY", "BORLAKU", "BERBAKY", "BERFAKU", "BARTARAR", "NAKU"])
-    return has_prefix and ("HING" in compact or "HIN" in compact or "HNOG" in compact or compact.startswith(("BERLAKU", "BARLAKU", "BERLAKY")))
+    has_prefix = any(prefix in compact for prefix in ["BERLAKU", "BARLAKU", "BERLAKY", "BORLAKU", "BERBAKY", "BERFAKU", "SERFAKU", "BERTAKU", "BARTARAR", "NAKU"])
+    return has_prefix and ("HING" in compact or "HIN" in compact or "HNOG" in compact or compact.startswith(("BERLAKU", "BARLAKU", "BERLAKY", "SERFAKU", "BERTAKU")))
 
 
 def _contains_non_region_label(value: str) -> bool:

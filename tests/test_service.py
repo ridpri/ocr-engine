@@ -44,6 +44,25 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(detect_document_type(raw_text), "STNK")
 
+    def test_detect_document_type_from_noisy_stnk_tax_receipt(self):
+        raw_text = "\n".join(
+            [
+                "TANDA BUKTI PELUNASAN KEWAJIBAN PEMBAYARAN",
+                "SAMSAT PROVINSI DKI JAKARTA",
+                "NOMOR POUSR",
+                "B 9241 TYX",
+                "NAMA PEMIUK",
+                "PT PP PRESISI TBK",
+                "TAHUN PEMBUAIAN",
+                "2018",
+                "NONCR UESN",
+                "J088UFJ99935",
+                "BERLAKU SAMPALL 08-10-2023",
+            ]
+        )
+
+        self.assertEqual(detect_document_type(raw_text), "STNK")
+
     def test_parse_document_text_respects_valid_hint(self):
         raw_text = "NO POLISI : B 1234 ABC\nNAMA PEMILIK : BUDI\nNO RANGKA : MHKA1234567890123\nNO MESIN : 1NR1234567"
 

@@ -15,17 +15,21 @@ STNK_RETRY_PREPARE_MAX_SIDE = DEFAULT_PREPARE_MAX_SIDE
 STNK_REQUIRED_RETRY_FIELDS = ("nomor_polisi", "nama_pemilik", "tahun_pembuatan", "nomor_rangka", "nomor_mesin")
 STNK_MARKER_PATTERNS = [
     r"SURAT\s+TANDA\s+NOMOR\s+KENDARAAN",
+    r"TANDA\s+BUKTI\s+PELUNASAN",
     r"\bNO\.?\s*POL(?:ISI)?\b",
     r"\bNO\.?\s*RANGKA\b",
     r"\bNOMOR\s+RANGKA\b",
     r"\bNO\.?\s*MESIN\b",
     r"\bNOMOR\s+MESIN\b",
+    r"\bNOMOR\s*MES\w*\b",
     r"\bNOMOR\s+BPKB\b",
     r"\bNAMA\s+PEMILIK\b",
     r"\bTNKB\b",
     r"\bSWDKLLJ\b",
     r"\bBBN\s*-?\s*KB\b",
     r"\bMERK\s*/?\s*TYPE\b",
+    r"\bKENDARAAN\s+KHUSUS\b",
+    r"\bBERLAKU\s+SAMP\w*\b",
 ]
 KTP_MARKER_PATTERNS = [
     r"\bPROVINSI\b",

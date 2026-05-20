@@ -8,7 +8,7 @@ module.exports.config = {
 
 module.exports = async function handler(req, res) {
   const backend = (process.env.OCR_API_BASE_URL || DEFAULT_BACKEND).replace(/\/+$/, "");
-  const upstreamPath = req.url.replace(/^\/api/, "");
+  const upstreamPath = buildUpstreamPath(req);
   const headers = {};
 
   for (const [key, value] of Object.entries(req.headers)) {
@@ -40,6 +40,29 @@ module.exports = async function handler(req, res) {
     res.status(502).json({ detail: `OCR proxy failed: ${error.message}` });
   }
 };
+
+function buildUpstreamPath(req) {
+  let pathParts = Array.isArray(req.query.path)
+    ? req.query.path
+    : String(req.query.path || "").split("/").filter(Boolean);
+  if (pathParts[0] === "vps") {
+    pathParts = pathParts.slice(1);
+  }
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(req.query || {})) {
+    if (key === "path") continue;
+    if (Array.isArray(value)) {
+      for (const item of value) searchParams.append(key, item);
+    } else if (value !== undefined) {
+      searchParams.append(key, value);
+    }
+  }
+
+  const suffix = searchParams.toString();
+  const path = `/ocr/${pathParts.map(encodeURIComponent).join("/")}`;
+  return suffix ? `${path}?${suffix}` : path;
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {

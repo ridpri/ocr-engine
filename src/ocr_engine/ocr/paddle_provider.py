@@ -35,6 +35,9 @@ class PaddleOcrProvider:
             raise OcrDependencyError("PaddleOCR engine does not expose ocr() or predict().")
         return normalize_paddle_output(raw)
 
+    def warm_up(self) -> None:
+        self._get_engine()
+
     def _get_engine(self) -> Any:
         if self._engine is not None:
             return self._engine

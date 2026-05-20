@@ -3,11 +3,14 @@ from __future__ import annotations
 import re
 
 from ocr_engine.parsers.common import capture_after_label, make_invalid, make_missing, make_ok, normalized_lines
+from ocr_engine.postal_code import lookup_postal_code
 from ocr_engine.schemas import DocumentResult, FieldResult
 from ocr_engine.validators import normalize_nik
 
 
 KTP_LABELS: dict[str, list[str]] = {
+    "provinsi": ["Provinsi", "PROVINSI"],
+    "kabupaten_kota": ["Kota Administrasi", "KOTA ADMINISTRASI", "Kabupaten", "KABUPATEN", "Kota", "KOTA"],
     "nik": ["NIK", "NTK", "HIK"],
     "nama": ["Nama", "NAMA", "Name", "Nams", "Nania", "Namat"],
     "tempat_tanggal_lahir": [
@@ -39,6 +42,7 @@ KTP_LABELS: dict[str, list[str]] = {
     "status_perkawinan": ["Status Perkawinan"],
     "pekerjaan": ["Pekerjaan", "Pekeriaan", "Pekerian", "Pokerjaan", "Pakeraan", "Pekerean"],
     "kewarganegaraan": ["Kewarganegaraan", "Kewargane", "Kewarganegaraar", "Kewarganegaraart", "Kevrganegaraan"],
+    "kode_pos": ["Kode Pos", "Kodepos"],
     "berlaku_hingga": [
         "Berlaku Hingga",
         "BerlakuHingga",
@@ -48,6 +52,8 @@ KTP_LABELS: dict[str, list[str]] = {
         "Borlaku Hingga",
         "Berbaky Hingga",
         "Berfaku Hingga",
+        "Serfaku Hingga",
+        "Bertaku Hingga",
         "Berlaku Hingoa",
         "Berlaku Hingge",
         "Berlaku Hinggs",
@@ -140,6 +146,61 @@ NON_NAME_KEYWORDS = {
     "HIDUP",
     "LAKI",
     "PEREMPUAN",
+}
+JOINED_NAME_PREFIXES = [
+    "MUHAMMAD",
+    "MOHAMAD",
+    "MOCHAMAD",
+    "ABDUL",
+    "AHMAD",
+    "ANNISA",
+    "ANISA",
+    "DEWI",
+    "DIAH",
+    "SITI",
+    "NUR",
+    "SRI",
+    "TRI",
+    "DWI",
+    "EKO",
+    "BUDI",
+    "AGUS",
+]
+JOINED_NAME_SUFFIX_PREFIXES = {
+    "AGUS",
+    "AN",
+    "ANG",
+    "BUDI",
+    "CAH",
+    "DEWI",
+    "DIAN",
+    "DWI",
+    "EKA",
+    "FIT",
+    "HART",
+    "HIDAY",
+    "KURN",
+    "LEST",
+    "MAUL",
+    "NINGS",
+    "NUG",
+    "PRA",
+    "PRI",
+    "PUT",
+    "RAH",
+    "RAT",
+    "RET",
+    "RIZ",
+    "SAP",
+    "SET",
+    "SUL",
+    "SUP",
+    "SUR",
+    "SUS",
+    "WAH",
+    "WID",
+    "YUL",
+    "YUN",
 }
 
 
@@ -250,6 +311,29 @@ def _normalize_nik_with_ocr_corrections(value: str) -> str | None:
 def _apply_ktp_fallbacks(raw_text: str, fields: dict[str, FieldResult]) -> None:
     lines = normalized_lines(raw_text)
 
+    normalized_province = _normalize_province(fields["provinsi"].value or "")
+    if normalized_province:
+        fields["provinsi"] = make_ok(normalized_province, confidence=fields["provinsi"].confidence or 0.88)
+    else:
+        fallback_province = _fallback_province(lines)
+        if fallback_province:
+            fields["provinsi"] = make_ok(fallback_province, confidence=0.78)
+        elif fields["provinsi"].status == "ok":
+            fields["provinsi"] = make_missing()
+
+    normalized_admin_area = _normalize_kabupaten_kota(fields["kabupaten_kota"].value or "")
+    if normalized_admin_area:
+        fields["kabupaten_kota"] = make_ok(
+            normalized_admin_area,
+            confidence=fields["kabupaten_kota"].confidence or 0.88,
+        )
+    else:
+        fallback_admin_area = _fallback_kabupaten_kota(lines)
+        if fallback_admin_area:
+            fields["kabupaten_kota"] = make_ok(fallback_admin_area, confidence=0.78)
+        elif fields["kabupaten_kota"].status == "ok":
+            fields["kabupaten_kota"] = make_missing()
+
     if fields["nama"].status == "ok" and fields["nama"].value and _name_value_needs_repair(fields["nama"].value):
         repaired_name = _fallback_name_near_label(lines)
         fields["nama"] = make_ok(repaired_name, confidence=0.7) if repaired_name else make_missing()
@@ -263,6 +347,15 @@ def _apply_ktp_fallbacks(raw_text: str, fields: dict[str, FieldResult]) -> None:
         fallback_name = _fallback_name_after_birth_line(lines)
         if fallback_name:
             fields["nama"] = make_ok(fallback_name, confidence=0.7)
+
+    if fields["nama"].status == "ok" and fields["nama"].value:
+        repaired_name = _repair_joined_person_name(fields["nama"].value)
+        if repaired_name != fields["nama"].value:
+            fields["nama"] = make_ok(
+                repaired_name,
+                confidence=min(fields["nama"].confidence, 0.78),
+                raw=fields["nama"].raw or "fallback:joined_name_spacing",
+            )
 
     normalized_birth_place_date = _normalize_birth_place_date(fields["tempat_tanggal_lahir"].value or "")
     if normalized_birth_place_date:
@@ -283,6 +376,10 @@ def _apply_ktp_fallbacks(raw_text: str, fields: dict[str, FieldResult]) -> None:
             fields["jenis_kelamin"] = make_ok(fallback_gender, confidence=0.78)
         elif fields["jenis_kelamin"].status == "ok":
             fields["jenis_kelamin"] = make_missing()
+
+    if fields["alamat"].status == "ok" and not _looks_like_valid_address_value(fields["alamat"].value or ""):
+        fallback_address = _fallback_address(lines)
+        fields["alamat"] = make_ok(fallback_address, confidence=0.72) if fallback_address else make_missing()
 
     if fields["alamat"].status == "missing":
         fallback_address = _fallback_address(lines)
@@ -330,6 +427,14 @@ def _apply_ktp_fallbacks(raw_text: str, fields: dict[str, FieldResult]) -> None:
             fields["status_perkawinan"] = make_ok(fallback_status, confidence=0.78)
         elif fields["status_perkawinan"].status == "ok":
             fields["status_perkawinan"] = make_missing()
+        else:
+            fields["status_perkawinan"] = FieldResult(
+                value="BELUM KAWIN",
+                confidence=0.35,
+                status="ok",
+                evidence=["fallback:default_marital_status"],
+                raw="fallback:default_marital_status",
+            )
 
     normalized_religion = _normalize_religion(fields["agama"].value or "")
     if normalized_religion:
@@ -370,6 +475,113 @@ def _apply_ktp_fallbacks(raw_text: str, fields: dict[str, FieldResult]) -> None:
             fields["berlaku_hingga"] = make_ok(fallback_expiry, confidence=0.78)
         elif fields["berlaku_hingga"].status == "ok":
             fields["berlaku_hingga"] = make_missing()
+
+    if fields["kode_pos"].status != "ok":
+        postal_code = lookup_postal_code(fields)
+        if postal_code:
+            fields["kode_pos"] = FieldResult(
+                value=postal_code.kode_pos,
+                confidence=postal_code.confidence,
+                status="ok",
+                evidence=postal_code.evidence,
+                raw="db_kode_wilayah",
+                metadata={
+                    "kelurahan": postal_code.kelurahan,
+                    "kecamatan": postal_code.kecamatan,
+                    "kode_kecamatan": postal_code.kode_kecamatan,
+                    "kode_kota": postal_code.kode_kota,
+                    "nama_kota": postal_code.nama_kota,
+                    "kode_provinsi": postal_code.kode_provinsi,
+                    "nama_provinsi": postal_code.nama_provinsi,
+                    "alamat_lengkap": postal_code.alamat_lengkap,
+                    "total_options": postal_code.total_options,
+                    "match_status": postal_code.match_status,
+                },
+            )
+
+
+def _normalize_province(value: str) -> str | None:
+    cleaned = _clean_candidate_value(value).upper().strip(" :.-")
+    cleaned = re.sub(r"^PROVINSI\s*", "", cleaned)
+    cleaned = re.sub(r"^PROVINSI(?=[A-Z])", "", cleaned)
+    cleaned = re.sub(r"\b(?:KABUPATEN|KOTA|NIK|NAMA)\b.*$", "", cleaned).strip(" :.-")
+    if not cleaned or _contains_any_label(cleaned):
+        return None
+    if normalize_nik(cleaned) or any(char.isdigit() for char in cleaned):
+        return None
+    return cleaned if re.fullmatch(r"[A-Z][A-Z .'-]{2,}", cleaned) else None
+
+
+def _fallback_province(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines):
+        upper = line.upper()
+        if upper.startswith("PROVINSI"):
+            normalized = _normalize_province(upper)
+            if normalized:
+                return normalized
+            if index + 1 < len(lines):
+                normalized = _normalize_province(lines[index + 1])
+                if normalized:
+                    return normalized
+    return None
+
+
+def _normalize_kabupaten_kota(value: str) -> str | None:
+    cleaned = _clean_candidate_value(value).upper().strip(" :.-")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\b(?:NIK|NAMA|TEMP\w*|TGL|TANGGAL|LAHIR)\b.*$", "", cleaned, flags=re.IGNORECASE).strip(" :.-")
+    if not cleaned or _contains_non_admin_area_value_label(cleaned):
+        return None
+    if normalize_nik(cleaned) or any(char.isdigit() for char in cleaned):
+        return None
+    if cleaned in FIELD_VALUE_BLOCKLIST:
+        return None
+    if _normalize_religion(cleaned) or _normalize_gender(cleaned) or _normalize_marital_status(cleaned):
+        return None
+    cleaned = re.sub(r"^(?:KOTA\s+ADMINISTRASI|KABUPATEN|KAB\.?|KOTA)\s+", "", cleaned).strip(" :.-")
+    if not cleaned:
+        return None
+    return cleaned if re.fullmatch(r"[A-Z][A-Z .'\-/]{2,}", cleaned) else None
+
+
+def _fallback_kabupaten_kota(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines):
+        upper = line.upper()
+        normalized = _admin_area_from_header_line(upper)
+        if normalized:
+            return normalized
+
+        if not _is_kabupaten_kota_label(upper):
+            continue
+
+        for candidate in lines[index + 1 : min(len(lines), index + 4)]:
+            if _contains_any_label(candidate.upper()):
+                break
+            normalized = _normalize_kabupaten_kota(candidate)
+            if normalized:
+                return normalized
+    return None
+
+
+def _admin_area_from_header_line(line: str) -> str | None:
+    match = re.search(r"\b(?:KABUPATEN|KAB\.?|KOTA(?:\s+ADMINISTRASI)?)\s+(.+)$", line, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return _normalize_kabupaten_kota(match.group(0))
+
+
+def _is_kabupaten_kota_label(value: str) -> bool:
+    compact = re.sub(r"[^A-Z]", "", value.upper())
+    return compact in {"KABUPATEN", "KAB", "KOTA", "KOTAADMINISTRASI"}
+
+
+def _contains_non_admin_area_value_label(value: str) -> bool:
+    blocked_patterns = [
+        r"\b(?:NIK|NAMA|TEMP\w*|TGL|TANGGAL|LAHIR|ALAMAT|RT\s*/?\s*RW|KEL(?:/|\b)|KELURAHAN|DESA|KECAM\w*|AGAMA|STATUS|PEKER\w*|KEWARG\w*|BERLAKU|HINGGA|GOL|DARAH)\b",
+        r"\bJENIS\s*KELAMIN\b",
+        r"\bPERKAW\w*\b",
+    ]
+    return any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in blocked_patterns)
 
 
 def _fallback_name(lines: list[str]) -> str | None:
@@ -426,6 +638,34 @@ def _fallback_name_after_birth_line(lines: list[str]) -> str | None:
             if _looks_like_person_name(candidate) or _looks_like_single_person_name(candidate):
                 return candidate
     return None
+
+
+def _repair_joined_person_name(value: str) -> str:
+    cleaned = _clean_candidate_value(value).upper()
+    if not cleaned or _contains_any_label(cleaned) or any(char.isdigit() for char in cleaned):
+        return value
+
+    repaired_tokens = [_repair_joined_name_token(token) for token in cleaned.split()]
+    return " ".join(repaired_tokens)
+
+
+def _repair_joined_name_token(token: str) -> str:
+    if not re.fullmatch(r"[A-Z']{9,}", token):
+        return token
+    if token in NON_NAME_KEYWORDS or token in FIELD_VALUE_BLOCKLIST:
+        return token
+
+    for prefix in sorted(JOINED_NAME_PREFIXES, key=len, reverse=True):
+        if not token.startswith(prefix):
+            continue
+        suffix = token[len(prefix) :]
+        if len(suffix) < 5:
+            continue
+        if not any(suffix.startswith(stem) for stem in JOINED_NAME_SUFFIX_PREFIXES):
+            continue
+        if _looks_like_single_person_name(suffix):
+            return f"{prefix} {suffix}"
+    return token
 
 
 def _fallback_birth_place_date(lines: list[str]) -> str | None:
@@ -951,7 +1191,7 @@ def _fallback_transposed_expiry(lines: list[str]) -> str | None:
 
 
 def _expiry_from_inline_label(line: str) -> str | None:
-    label = r"(?:BERLAK\w*|BARLAK\w*|BERLAKY|BORLAK\w*|BERBAKY|BERFAKU|BERFAK\w*|BARTARAR|NAKU)"
+    label = r"(?:BERLAK\w*|BARLAK\w*|BERLAKY|BORLAK\w*|BERBAKY|BERFAKU|BERFAK\w*|SERFAKU|SERFAK\w*|BERTAKU|BERTAK\w*|BARTARAR|NAKU)"
     match = re.search(rf"{label}\s*:?\s*(?:HING\w*|HIN\w*|HNOG\w*)?\s*[:_\-]?\s*(.*)$", line, flags=re.IGNORECASE)
     if not match:
         return None
@@ -977,8 +1217,8 @@ def _normalize_expiry(value: str) -> str | None:
 
 def _is_expiry_label(value: str) -> bool:
     compact = re.sub(r"[^A-Z]", "", value.upper())
-    has_prefix = any(prefix in compact for prefix in ["BERLAKU", "BARLAKU", "BERLAKY", "BORLAKU", "BERBAKY", "BERFAKU", "BARTARAR", "NAKU"])
-    return has_prefix and ("HING" in compact or "HIN" in compact or "HNOG" in compact or compact.startswith(("BERLAKU", "BARLAKU", "BERLAKY")))
+    has_prefix = any(prefix in compact for prefix in ["BERLAKU", "BARLAKU", "BERLAKY", "BORLAKU", "BERBAKY", "BERFAKU", "SERFAKU", "BERTAKU", "BARTARAR", "NAKU"])
+    return has_prefix and ("HING" in compact or "HIN" in compact or "HNOG" in compact or compact.startswith(("BERLAKU", "BARLAKU", "BERLAKY", "SERFAKU", "BERTAKU")))
 
 
 def _is_job_label(value: str) -> bool:
@@ -1028,6 +1268,17 @@ def _looks_like_loose_address_before_rt(value: str) -> bool:
     if len(re.findall(r"[A-Z]", upper)) < 5:
         return False
     return bool(re.fullmatch(r"[A-Z0-9 .'/\-]+", upper))
+
+
+def _looks_like_valid_address_value(value: str) -> bool:
+    upper = _clean_candidate_value(value).upper()
+    if not upper or upper in FIELD_VALUE_BLOCKLIST:
+        return False
+    if re.search(r"\bGOL\.?\s*DARAH\b|\bDARAH\b", upper):
+        return False
+    if _contains_any_label(upper):
+        return False
+    return _looks_like_address(upper) or _looks_like_loose_address_before_rt(upper)
 
 
 def _is_standalone_nik_line(value: str) -> bool:

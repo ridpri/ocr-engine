@@ -54,7 +54,18 @@ class PaddleProviderTests(unittest.TestCase):
         self.assertEqual(kwargs["text_detection_model_name"], "PP-OCRv5_mobile_det")
         self.assertEqual(kwargs["text_recognition_model_name"], "en_PP-OCRv5_mobile_rec")
         self.assertEqual(kwargs["text_det_limit_side_len"], 1280)
+        self.assertEqual(kwargs["text_recognition_batch_size"], 4)
         self.assertFalse(kwargs["use_doc_orientation_classify"])
+
+    def test_warm_up_initializes_engine_once(self):
+        calls = []
+
+        provider = PaddleOcrProvider(engine_factory=lambda: calls.append("created") or object())
+
+        provider.warm_up()
+        provider.warm_up()
+
+        self.assertEqual(calls, ["created"])
 
 
 if __name__ == "__main__":

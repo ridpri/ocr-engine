@@ -10,15 +10,17 @@ from ocr_engine.eval_summary import summarize_records
 from ocr_engine.image_utils import is_supported_input
 from ocr_engine.ocr.base import OcrDependencyError
 from ocr_engine.ocr.paddle_provider import PaddleOcrProvider
+from ocr_engine.parsers.stnk import stnk_structure_score
 from ocr_engine.pdf_utils import render_pdf_first_page
 from ocr_engine.pipeline import run_ocr_pipeline
+from ocr_engine.stnk_usage import classify_stnk_record
 from ocr_engine.validators import mask_sensitive_text
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run local OCR POC over image samples.")
     parser.add_argument("--input", required=True, help="Image file or folder containing images.")
-    parser.add_argument("--limit", type=int, default=5, help="Maximum files to process from a folder.")
+    parser.add_argument("--limit", type=int, default=5, help="Maximum files to process from a folder. Use 0 for all files.")
     parser.add_argument("--document-type", default="AUTO", choices=["AUTO", "KTP", "STNK"])
     parser.add_argument("--mode", default="accurate", choices=["fast", "accurate"], help="OCR processing mode.")
     parser.add_argument("--jsonl", help="Optional JSONL output path.")
@@ -43,7 +45,7 @@ def main() -> int:
         except Exception as exc:
             record = {"file": path.name, "status": "failed", "error": str(exc)}
 
-        print(json.dumps(record, ensure_ascii=False))
+        print(json.dumps(record, ensure_ascii=True))
         records.append(record)
         if output_path:
             with output_path.open("a", encoding="utf-8") as handle:
@@ -60,11 +62,14 @@ def main() -> int:
 def _collect_paths(input_path: Path, limit: int) -> list[Path]:
     if input_path.is_file():
         return [input_path]
-    return [
+    paths = [
         path
         for path in sorted(input_path.iterdir())
         if path.is_file() and is_supported_input(path)
-    ][:limit]
+    ]
+    if limit <= 0:
+        return paths
+    return paths[:limit]
 
 
 def _process_file(provider: PaddleOcrProvider, path: Path, document_type: str, mode: str = "accurate") -> dict:
@@ -77,7 +82,7 @@ def _process_file(provider: PaddleOcrProvider, path: Path, document_type: str, m
         parsed = result.parsed
         assessment = result.assessment
         processing_time_ms = round((time.perf_counter() - started) * 1000, 2)
-        return {
+        record = {
             "file": path.name,
             "status": "ok",
             "document_type": parsed.document_type,
@@ -97,6 +102,12 @@ def _process_file(provider: PaddleOcrProvider, path: Path, document_type: str, m
                 "timings": result.timings,
             },
         }
+        if document_type.upper() == "STNK" or parsed.document_type == "STNK":
+            record["stnk_structure_score"] = stnk_structure_score(result.ocr_result.raw_text)
+            usage_class, usage_reasons = classify_stnk_record(record)
+            record["stnk_usage_class"] = usage_class
+            record["stnk_usage_reasons"] = usage_reasons
+        return record
 
 
 if __name__ == "__main__":

@@ -8,6 +8,14 @@
       "destination": "/api/health"
     },
     {
+      "source": "/ocr/vps",
+      "destination": "/api/ocr"
+    },
+    {
+      "source": "/ocr/vps/:path*",
+      "destination": "/api/ocr/:path*"
+    },
+    {
       "source": "/ocr/:path*",
       "destination": "/api/ocr/:path*"
     }

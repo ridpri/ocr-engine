@@ -181,6 +181,41 @@
       color: var(--muted);
       font-size: 13px;
     }
+    .check-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin-top: 14px;
+      color: #354251;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .check-row input {
+      margin-top: 3px;
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+    .quality-hint {
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 9px 10px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .quality-hint.warn {
+      border-color: #f2c572;
+      background: #fff8e8;
+      color: #6b3d00;
+    }
+    .quality-hint.bad {
+      border-color: #f0aaa4;
+      background: #fff1f0;
+      color: #7a1b12;
+    }
     .result-header {
       display: flex;
       justify-content: space-between;
@@ -235,6 +270,27 @@
       padding-top: 12px;
       border-top: 1px solid var(--border);
     }
+    .result-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 14px 18px 0;
+      border-top: 1px solid var(--border);
+    }
+    .tab-button {
+      background: #e6ebf1;
+      color: #243141;
+      border: 1px solid var(--border);
+      padding: 9px 12px;
+    }
+    .tab-button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .tab-button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
     .result-section:first-child {
       border-top: 0;
       padding-top: 0;
@@ -260,6 +316,9 @@
       border-collapse: collapse;
       margin-top: 10px;
     }
+    .table-wrap {
+      overflow-x: auto;
+    }
     th, td {
       border-top: 1px solid var(--border);
       padding: 10px 12px;
@@ -273,6 +332,12 @@
       background: #fbfcfd;
     }
     td.value { font-weight: 650; overflow-wrap: anywhere; }
+    .value-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
     .field-status {
       font-weight: 750;
       color: var(--ok);
@@ -284,6 +349,33 @@
     .confidence {
       white-space: nowrap;
       font-variant-numeric: tabular-nums;
+    }
+    .comparison-table {
+      min-width: 760px;
+    }
+    .comparison-table th:nth-child(4),
+    .comparison-table td:nth-child(4) {
+      text-align: center;
+      width: 76px;
+    }
+    .match-indicator {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: #e9f8ef;
+      color: var(--ok);
+      font-weight: 850;
+      line-height: 1;
+    }
+    .match-indicator.diff {
+      background: #fff1f0;
+      color: var(--bad);
+    }
+    .difference-note {
+      color: #354152;
+      line-height: 1.35;
     }
     .warnings {
       display: none;
@@ -430,22 +522,30 @@
 
           <label class="field-label" for="document-type">Tipe dokumen</label>
           <select id="document-type" name="document_type">
-            <option value="AUTO">AUTO</option>
-            <option value="KTP">KTP</option>
+            <option value="KTP" selected>KTP</option>
             <option value="STNK">STNK</option>
+            <option value="AUTO">AUTO</option>
           </select>
 
           <label class="field-label" for="engine-type">Engine</label>
           <select id="engine-type" name="engine_type">
             <option value="local">Local PaddleOCR</option>
-            <option value="agent">Agent OpenClaw/Codex</option>
             <option value="vps-local">VPS Local PaddleOCR</option>
-            <option value="vps-agent">VPS Agent OpenClaw/Codex</option>
           </select>
 
           <label class="field-label" for="vps-api-key">VPS API Key</label>
           <input id="vps-api-key" name="vps_api_key" type="password" placeholder="Isi kalau memilih engine VPS" autocomplete="off" />
           <div class="status">Testing only. Untuk production, API key harus disimpan di backend/proxy, bukan di browser.</div>
+
+          <label class="check-row" for="compare-openclaw">
+            <input id="compare-openclaw" name="compare_openclaw" type="checkbox" />
+            <span>Bandingkan dengan VPS OpenClaw AI</span>
+          </label>
+          <label class="check-row" for="quality-gate">
+            <input id="quality-gate" name="quality_gate" type="checkbox" />
+            <span>Cek kualitas sebelum OCR</span>
+          </label>
+          <div id="quality-gate-status" class="quality-hint">Quality gate opsional. Cocok untuk simulasi frontend pembelian asuransi.</div>
 
           <div class="actions">
             <button id="submit-button" type="submit">Jalankan OCR</button>
@@ -464,7 +564,7 @@
         <div id="result-body" style="display:none;">
           <div id="initial-section" class="result-section">
           <div class="section-title">
-            <h3>Hasil Awal</h3>
+            <h3>Hasil OCR</h3>
             <span id="initial-status">Menunggu OCR</span>
           </div>
           <div class="summary">
@@ -503,13 +603,17 @@
             <summary>Raw JSON</summary>
             <pre id="raw-json"></pre>
           </details>
+          <details id="it-output-details" style="display:none;">
+            <summary>Output IT</summary>
+            <pre id="it-output-json"></pre>
+          </details>
           <div class="copy-row">
             <button class="secondary" id="copy-json" type="button">Copy JSON</button>
           </div>
           </div>
           <div id="enrichment-section" class="result-section" style="display:none;">
             <div class="section-title">
-              <h3>Background Enrichment</h3>
+              <h3>OCR Background</h3>
               <span id="enrichment-status">Belum ada job</span>
             </div>
             <div class="summary">
@@ -536,21 +640,49 @@
               <pre id="enrichment-json"></pre>
             </details>
           </div>
+          <div id="ai-comparison-section" class="result-section" style="display:none;">
+            <div class="section-title">
+              <h3>VPS OpenClaw AI Comparison</h3>
+              <span id="ai-comparison-status">Belum dijalankan</span>
+            </div>
+            <div class="summary">
+              <div class="metric"><span>Provider</span><strong id="ai-comparison-provider">-</strong></div>
+              <div class="metric"><span>Roundtrip</span><strong id="ai-comparison-roundtrip">-</strong></div>
+              <div class="metric"><span>Processing</span><strong id="ai-comparison-processing-time">-</strong></div>
+              <div class="metric"><span>Decision</span><strong id="ai-comparison-decision">-</strong></div>
+            </div>
+            <div class="table-wrap">
+              <table class="comparison-table">
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    <th>PaddleOCR</th>
+                    <th>OpenClaw</th>
+                    <th>Cocok</th>
+                    <th>Catatan</th>
+                  </tr>
+                </thead>
+                <tbody id="ai-comparison-fields-body"></tbody>
+              </table>
+            </div>
+            <details>
+              <summary>OpenClaw JSON</summary>
+              <pre id="ai-comparison-json"></pre>
+            </details>
+          </div>
         </div>
       </section>
     </div>
 
     <section class="api-docs">
       <h2>Cara Integrasi API</h2>
-      <p>Gunakan service OCR sebagai API multipart upload. Web cukup mengirim file dokumen dan membaca JSON hasil ekstraksi.</p>
+      <p>Gunakan endpoint VPS/VPN OCR sebagai API multipart upload.</p>
       <div class="api-warning">
-        Jangan taruh API key langsung di frontend publik. Kalau halaman ini dinaikkan ke GitHub/Vercel, simpan API key di environment variable serverless/API route, lalu frontend memanggil route proxy tersebut.
+        Integrasi production cukup dari jaringan/VPN yang diizinkan dan menggunakan header API key dari backend/internal system.
       </div>
       <div class="api-grid">
         <div class="api-tile"><strong>KTP lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/ktp</code></div>
         <div class="api-tile"><strong>STNK lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/stnk</code></div>
-        <div class="api-tile"><strong>KTP agent VPS</strong><br><code>POST http://203.194.113.161/ocr/agent/ktp</code></div>
-        <div class="api-tile"><strong>STNK agent VPS</strong><br><code>POST http://203.194.113.161/ocr/agent/stnk</code></div>
       </div>
       <ul>
         <li>Method: <code>POST</code></li>
@@ -564,54 +696,6 @@
       <pre><code>curl -X POST "http://203.194.113.161/ocr/ktp"   -H "X-API-Key: YOUR_API_KEY"   -F "file=@KTP.jpg"
 
 curl -X POST "http://203.194.113.161/ocr/stnk"   -H "X-API-Key: YOUR_API_KEY"   -F "file=@STNK.pdf"</code></pre>
-
-      <h3>Contoh JavaScript dari Frontend ke Backend Proxy</h3>
-      <pre><code>const formData = new FormData();
-formData.append("file", fileInput.files[0]);
-
-const response = await fetch("/api/ocr/ktp", {
-  method: "POST",
-  body: formData
-});
-
-const result = await response.json();
-if (result.input_assessment?.can_auto_publish) {
-  // lanjut proses pembelian
-} else {
-  // tampilkan review / minta upload ulang
-}</code></pre>
-
-      <h3>Contoh Vercel API Route Proxy</h3>
-      <pre><code>// app/api/ocr/ktp/route.js
-export async function POST(request) {
-  const body = await request.formData();
-  const response = await fetch("http://203.194.113.161/ocr/ktp", {
-    method: "POST",
-    headers: {
-      "X-API-Key": process.env.OCR_API_KEY
-    },
-    body
-  });
-
-  return Response.json(await response.json(), {
-    status: response.status
-  });
-}</code></pre>
-
-      <h3>Response Decision</h3>
-      <pre><code>{
-  "document_type": "KTP",
-  "needs_review": false,
-  "input_assessment": {
-    "can_auto_publish": true,
-    "decision": "approved_for_auto",
-    "reason_codes": []
-  },
-  "fields": {
-    "nik": { "value": "3374114208810004", "status": "ok" },
-    "nama": { "value": "DANI ANGGOROWATI", "status": "ok" }
-  }
-}</code></pre>
     </section>
   </main>
 
@@ -626,6 +710,10 @@ export async function POST(request) {
     const statusEl = document.getElementById("status");
     const submitButton = document.getElementById("submit-button");
     const resetButton = document.getElementById("reset-button");
+    const engineSelect = document.getElementById("engine-type");
+    const compareOpenclaw = document.getElementById("compare-openclaw");
+    const qualityGate = document.getElementById("quality-gate");
+    const qualityGateStatus = document.getElementById("quality-gate-status");
     const resultBody = document.getElementById("result-body");
     const emptyState = document.getElementById("empty-state");
     const reviewBadge = document.getElementById("review-badge");
@@ -634,13 +722,24 @@ export async function POST(request) {
     const warningsEl = document.getElementById("warnings");
     const rawOcr = document.getElementById("raw-ocr");
     const rawJson = document.getElementById("raw-json");
+    const itOutputDetails = document.getElementById("it-output-details");
+    const itOutputJson = document.getElementById("it-output-json");
     const copyJson = document.getElementById("copy-json");
     const enrichmentSection = document.getElementById("enrichment-section");
     const enrichmentFieldsBody = document.getElementById("enrichment-fields-body");
     const enrichmentJson = document.getElementById("enrichment-json");
+    const aiComparisonSection = document.getElementById("ai-comparison-section");
+    const aiComparisonFieldsBody = document.getElementById("ai-comparison-fields-body");
+    const aiComparisonJson = document.getElementById("ai-comparison-json");
     let lastJson = null;
     let enrichmentPollTimer = null;
+    let selectedFileQuality = null;
+    let lastFile = null;
+    let lastDocumentType = "KTP";
+    let lastEngineType = "local";
+    let lastVpsApiKey = "";
 
+    configureEngineOptions();
     async function checkHealth() {
       try {
         const response = await fetch("/health");
@@ -660,9 +759,21 @@ export async function POST(request) {
       fileMeta.textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
       preview.style.display = "flex";
       statusEl.textContent = "File siap diproses.";
+      selectedFileQuality = null;
+      updateQualityGateStatus({ status: "pending", message: "Mengecek dimensi file..." });
+      evaluateClientQuality(file).then((quality) => {
+        selectedFileQuality = quality;
+        const gate = runClientQualityGate(quality, document.getElementById("document-type").value);
+        updateQualityGateStatus(gate);
+      });
     }
 
     fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
+    document.getElementById("document-type").addEventListener("change", () => {
+      if (selectedFileQuality) {
+        updateQualityGateStatus(runClientQualityGate(selectedFileQuality, document.getElementById("document-type").value));
+      }
+    });
     dropzone.addEventListener("dragover", (event) => {
       event.preventDefault();
       dropzone.classList.add("dragover");
@@ -687,8 +798,14 @@ export async function POST(request) {
       reviewBadge.textContent = "Belum ada hasil";
       statusEl.textContent = "Pilih gambar untuk mulai.";
       lastJson = null;
+      lastFile = null;
+      selectedFileQuality = null;
       stopEnrichmentPolling();
       enrichmentSection.style.display = "none";
+      aiComparisonSection.style.display = "none";
+      setResultTab("endpoint", false);
+      configureEngineOptions();
+      updateQualityGateStatus({ status: "info", message: "Quality gate opsional. Cocok untuk simulasi frontend pembelian asuransi." });
     });
 
     form.addEventListener("submit", async (event) => {
@@ -699,20 +816,45 @@ export async function POST(request) {
         return;
       }
 
-      submitButton.disabled = true;
-      statusEl.textContent = "OCR sedang berjalan. Tunggu sampai selesai.";
-      clearRenderedResult("OCR sedang berjalan.");
       const documentType = document.getElementById("document-type").value;
-      const engineType = document.getElementById("engine-type").value;
+      const engineType = engineSelect.value;
       const vpsApiKey = document.getElementById("vps-api-key").value.trim();
-      const body = new FormData();
-      body.append("file", file);
+      lastFile = file;
+      lastDocumentType = documentType;
+      lastEngineType = engineType;
+      lastVpsApiKey = vpsApiKey;
+      let comparisonPromise = null;
 
       try {
-        const endpoint = endpointFor(documentType, engineType);
-        if (engineType.startsWith("vps-") && !vpsApiKey) {
-          throw new Error("Isi VPS API Key dulu untuk engine VPS.");
+        if (qualityGate.checked) {
+          selectedFileQuality = selectedFileQuality || await evaluateClientQuality(file);
+          const gate = runClientQualityGate(selectedFileQuality, documentType);
+          updateQualityGateStatus(gate);
+          if (!gate.allowed) {
+            clearRenderedResult(gate.message);
+            statusEl.textContent = gate.message;
+            reviewBadge.className = "badge warn";
+            reviewBadge.textContent = "Quality gate";
+            return;
+          }
         }
+
+        const endpoint = endpointFor(documentType, engineType);
+        const shouldCompare = compareOpenclaw.checked;
+        if ((engineType.startsWith("vps-") || shouldCompare) && !vpsApiKey) {
+          throw new Error("Isi VPS API Key dulu untuk engine VPS atau pembanding OpenClaw.");
+        }
+
+        submitButton.disabled = true;
+        statusEl.textContent = "OCR sedang berjalan. Tunggu sampai selesai.";
+        clearRenderedResult("OCR sedang berjalan.");
+        if (shouldCompare) {
+          renderAiComparisonPending();
+          comparisonPromise = runOpenClawComparison(file, documentType, vpsApiKey);
+        }
+
+        const body = new FormData();
+        body.append("file", file);
         statusEl.textContent = `Mengirim ke ${endpoint}`;
         const requestStarted = performance.now();
         const response = await fetch(endpoint, {
@@ -721,11 +863,22 @@ export async function POST(request) {
           headers: engineType.startsWith("vps-") ? { "X-VPS-API-Key": vpsApiKey } : {}
         });
         const roundtripMs = performance.now() - requestStarted;
-        const data = await response.json();
+        const data = await parseJsonResponse(response, "OCR gagal");
         if (!response.ok) throw new Error(data.detail || "OCR gagal.");
         renderResult(data, roundtripMs);
-        statusEl.textContent = "OCR selesai.";
+        statusEl.textContent = comparisonPromise ? "PaddleOCR selesai. Menunggu pembanding OpenClaw." : "OCR selesai.";
+        if (comparisonPromise) {
+          try {
+            const comparison = await comparisonPromise;
+            renderAiComparisonResult(comparison.data, comparison.roundtripMs);
+            statusEl.textContent = "OCR selesai. Hasil PaddleOCR dan OpenClaw sudah tampil.";
+          } catch (comparisonError) {
+            renderAiComparisonError(comparisonError.message);
+            statusEl.textContent = `PaddleOCR selesai. Pembanding OpenClaw gagal: ${comparisonError.message}`;
+          }
+        }
       } catch (error) {
+        if (comparisonPromise) comparisonPromise.catch(() => undefined);
         clearRenderedResult(error.message);
         statusEl.textContent = error.message;
         reviewBadge.className = "badge warn";
@@ -737,23 +890,114 @@ export async function POST(request) {
 
     function endpointFor(documentType, engineType) {
       if (engineType === "vps-local") {
-        if (documentType === "KTP") return "/ocr/vps/ktp";
+        if (documentType === "KTP") return "/ocr/vps/ktp?mode=fast";
         if (documentType === "STNK") return "/ocr/vps/stnk";
-        return `/ocr/vps?document_type=${encodeURIComponent(documentType)}`;
+        return `/ocr/vps?document_type=${encodeURIComponent(documentType)}&mode=fast`;
       }
-      if (engineType === "vps-agent") {
-        if (documentType === "KTP") return "/ocr/vps/agent/ktp";
-        if (documentType === "STNK") return "/ocr/vps/agent/stnk";
-        return `/ocr/vps/agent?document_type=${encodeURIComponent(documentType)}`;
+      if (documentType === "KTP") return "/ocr/ktp?mode=fast";
+      if (documentType === "STNK") return "/ocr/purchase/stnk";
+      return `/ocr?document_type=${encodeURIComponent(documentType)}&mode=fast`;
+    }
+
+    function configureEngineOptions() {
+      if (isLocalRuntime()) return;
+      const localOption = engineSelect.querySelector('option[value="local"]');
+      if (localOption) localOption.remove();
+      engineSelect.value = "vps-local";
+      lastEngineType = "vps-local";
+    }
+
+    function isLocalRuntime() {
+      return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+    }
+
+    function comparisonEndpointFor(documentType) {
+      if (documentType === "KTP") return "/ocr/vps/agent/ktp";
+      if (documentType === "STNK") return "/ocr/vps/agent/stnk";
+      return `/ocr/vps/agent?document_type=${encodeURIComponent(documentType)}`;
+    }
+
+    async function runOpenClawComparison(file, documentType, vpsApiKey) {
+      const body = new FormData();
+      body.append("file", file);
+      const requestStarted = performance.now();
+      const response = await fetch(comparisonEndpointFor(documentType), {
+        method: "POST",
+        body,
+        headers: { "X-VPS-API-Key": vpsApiKey }
+      });
+      const roundtripMs = performance.now() - requestStarted;
+      const data = await parseJsonResponse(response, "OpenClaw comparison gagal");
+      if (!response.ok) throw new Error(data.detail || "OpenClaw comparison gagal.");
+      return { data, roundtripMs };
+    }
+
+    async function parseJsonResponse(response, fallbackMessage) {
+      const text = await response.text();
+      if (!text) return {};
+      try {
+        return JSON.parse(text);
+      } catch {
+        const contentType = response.headers.get("content-type") || "unknown content-type";
+        const snippet = text.replace(/\s+/g, " ").trim().slice(0, 180);
+        return {
+          detail: `${fallbackMessage}: server mengembalikan non-JSON (${response.status}, ${contentType}). ${snippet || "Response kosong."}`
+        };
       }
-      if (engineType === "agent") {
-        if (documentType === "KTP") return "/ocr/agent/ktp";
-        if (documentType === "STNK") return "/ocr/agent/stnk";
-        return `/ocr/agent?document_type=${encodeURIComponent(documentType)}`;
+    }
+
+    async function evaluateClientQuality(file) {
+      if (!file.type.startsWith("image/")) {
+        return { kind: "non_image", allowed: true, message: "Quality gate browser dilewati untuk PDF. Backend tetap mengecek kualitas hasil OCR." };
       }
-      if (documentType === "KTP") return "/ocr/ktp";
-      if (documentType === "STNK") return "/ocr/stnk";
-      return `/ocr?document_type=${encodeURIComponent(documentType)}`;
+      const dimensions = await imageDimensions(file);
+      return { kind: "image", width: dimensions.width, height: dimensions.height };
+    }
+
+    function imageDimensions(file) {
+      return new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve({ width: image.naturalWidth, height: image.naturalHeight });
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve({ width: 0, height: 0 });
+        };
+        image.src = url;
+      });
+    }
+
+    function runClientQualityGate(quality, documentType) {
+      if (!quality || quality.status === "pending") {
+        return { allowed: true, status: "info", message: "Quality gate belum punya data dimensi." };
+      }
+      if (quality.kind !== "image") {
+        return { allowed: true, status: "info", message: quality.message };
+      }
+      const width = quality.width || 0;
+      const height = quality.height || 0;
+      const minWidth = documentType === "STNK" ? 1000 : 900;
+      const minHeight = documentType === "STNK" ? 650 : 500;
+      const warnings = [];
+      if (!width || !height) warnings.push("gambar tidak bisa dibaca browser");
+      if (width < minWidth || height < minHeight) warnings.push(`resolusi ${width}x${height}, target minimal ${minWidth}x${minHeight}`);
+      if (documentType === "STNK" && height > width) warnings.push("STNK sebaiknya landscape dan full frame");
+      if (warnings.length) {
+        return {
+          allowed: false,
+          status: "bad",
+          message: `Quality gate menahan OCR: ${warnings.join("; ")}. Untuk sales frontend, minta user foto ulang lebih dekat dan lurus.`
+        };
+      }
+      return { allowed: true, status: "ok", message: `Quality gate OK: ${width}x${height}.` };
+    }
+
+    function updateQualityGateStatus(gate) {
+      qualityGateStatus.className = `quality-hint ${gate.status === "bad" ? "bad" : gate.status === "warn" ? "warn" : ""}`.trim();
+      qualityGateStatus.textContent = gate.message || "Quality gate opsional. Cocok untuk simulasi frontend pembelian asuransi.";
     }
 
     function clearRenderedResult(message) {
@@ -764,10 +1008,16 @@ export async function POST(request) {
       assessmentEl.style.display = "none";
       warningsEl.style.display = "none";
       enrichmentSection.style.display = "none";
+      aiComparisonSection.style.display = "none";
+      aiComparisonFieldsBody.innerHTML = "";
+      aiComparisonJson.textContent = "";
       fieldsBody.innerHTML = "";
       rawOcr.textContent = "";
       rawJson.textContent = "";
+      itOutputDetails.style.display = "none";
+      itOutputJson.textContent = "";
       lastJson = null;
+      setResultTab("endpoint", false);
     }
 
     function renderResult(data, roundtripMs) {
@@ -775,6 +1025,7 @@ export async function POST(request) {
       lastJson = data;
       emptyState.style.display = "none";
       resultBody.style.display = "block";
+      setResultTab("endpoint", false);
       document.getElementById("initial-status").textContent = `Muncul awal dalam ${formatMs(roundtripMs)}`;
       const input_assessment = data.input_assessment || {};
       const decision = input_assessment.decision || (data.needs_review ? "needs_review" : "approved_for_auto");
@@ -807,12 +1058,12 @@ export async function POST(request) {
       const warnings = data.warnings || [];
       const isProcessingTimeout = warnings.includes("processing_timeout");
       if (isProcessingTimeout) {
-        document.getElementById("initial-status").textContent = "OCR accurate masih berjalan di background";
+        document.getElementById("initial-status").textContent = "OCR masih berjalan di background";
         reviewBadge.className = "badge warn";
         reviewBadge.textContent = "Processing";
         assessmentEl.style.display = "block";
         assessmentEl.className = "assessment review";
-        assessmentEl.textContent = "OCR fast melewati batas checkout. Hasil awal belum berisi field OCR; tunggu Background Enrichment selesai untuk hasil accurate.";
+        assessmentEl.textContent = "OCR melewati batas tunggu checkout. Hasil awal belum berisi field OCR; proses yang sama tetap berjalan di background sampai selesai.";
       }
       warningsEl.style.display = warnings.length ? "block" : "none";
       warningsEl.textContent = warnings.length ? warnings.join(", ") : "";
@@ -820,7 +1071,7 @@ export async function POST(request) {
       fieldsBody.innerHTML = "";
       if (isProcessingTimeout) {
         const row = document.createElement("tr");
-        row.innerHTML = '<td colspan="4" class="value">Hasil awal belum berisi field OCR. Lihat Background Enrichment setelah status selesai.</td>';
+        row.innerHTML = '<td colspan="4" class="value">Hasil awal belum berisi field OCR. OCR yang sama tetap berjalan di background.</td>';
         fieldsBody.appendChild(row);
       } else {
         Object.entries(data.fields || {}).forEach(([key, field]) => {
@@ -837,7 +1088,138 @@ export async function POST(request) {
 
       rawOcr.textContent = data.ocr?.raw_text_masked || "";
       rawJson.textContent = JSON.stringify(data, null, 2);
-      renderEnrichmentPending(data.enrichment);
+      renderItOutput(data.ti_compatible);
+      renderEnrichmentPending(data.enrichment || data.background_full_ocr);
+    }
+
+    function renderItOutput(payload) {
+      if (!payload) {
+        itOutputDetails.style.display = "none";
+        itOutputJson.textContent = "";
+        return;
+      }
+      itOutputDetails.style.display = "block";
+      itOutputJson.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    function setResultTab(tab, fullAvailable) {
+      const showFull = tab === "full" && fullAvailable;
+      initialSectionDisplay(!showFull);
+      enrichmentSection.style.display = showFull ? "block" : "none";
+    }
+
+    function initialSectionDisplay(visible) {
+      document.getElementById("initial-section").style.display = visible ? "block" : "none";
+    }
+
+    function renderAiComparisonPending() {
+      aiComparisonSection.style.display = "block";
+      document.getElementById("ai-comparison-status").textContent = "Menunggu VPS OpenClaw";
+      document.getElementById("ai-comparison-provider").textContent = "openclaw";
+      document.getElementById("ai-comparison-roundtrip").textContent = "-";
+      document.getElementById("ai-comparison-processing-time").textContent = "-";
+      document.getElementById("ai-comparison-decision").textContent = "-";
+      aiComparisonFieldsBody.innerHTML = '<tr><td colspan="5" class="value">Pembanding OpenClaw sedang berjalan.</td></tr>';
+      aiComparisonJson.textContent = "";
+    }
+
+    function renderAiComparisonResult(data, roundtripMs) {
+      aiComparisonSection.style.display = "block";
+      const assessment = data.input_assessment || {};
+      document.getElementById("ai-comparison-status").textContent = "OpenClaw selesai";
+      document.getElementById("ai-comparison-provider").textContent = data.agent?.provider || data.ocr?.provider || "openclaw";
+      document.getElementById("ai-comparison-roundtrip").textContent = formatMs(roundtripMs);
+      document.getElementById("ai-comparison-processing-time").textContent = formatMs(data.processing_time_ms);
+      document.getElementById("ai-comparison-decision").textContent = assessment.decision || (data.needs_review ? "needs_review" : "-");
+      aiComparisonFieldsBody.innerHTML = "";
+      const rows = buildFieldComparisonRows(lastJson, data);
+      if (!rows.length) {
+        const row = document.createElement("tr");
+        row.innerHTML = '<td colspan="5" class="value">Tidak ada field untuk dibandingkan.</td>';
+        aiComparisonFieldsBody.appendChild(row);
+      }
+      rows.forEach((comparison) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${escapeHtml(comparison.key)}</td>
+          <td class="value">${renderFieldComparisonCell(comparison.paddle)}</td>
+          <td class="value">${renderFieldComparisonCell(comparison.openclaw)}</td>
+          <td><span class="match-indicator ${comparison.matches ? "" : "diff"}">${comparison.matches ? "✓" : "×"}</span></td>
+          <td class="difference-note">${escapeHtml(comparison.note)}</td>
+        `;
+        aiComparisonFieldsBody.appendChild(row);
+      });
+      aiComparisonJson.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function renderAiComparisonError(message) {
+      aiComparisonSection.style.display = "block";
+      document.getElementById("ai-comparison-status").textContent = "OpenClaw gagal";
+      document.getElementById("ai-comparison-provider").textContent = "openclaw";
+      document.getElementById("ai-comparison-roundtrip").textContent = "-";
+      document.getElementById("ai-comparison-processing-time").textContent = "-";
+      document.getElementById("ai-comparison-decision").textContent = "error";
+      aiComparisonFieldsBody.innerHTML = `<tr><td colspan="5" class="value">${escapeHtml(message)}</td></tr>`;
+      aiComparisonJson.textContent = JSON.stringify({ error: message }, null, 2);
+    }
+
+    function buildFieldComparisonRows(paddleData, openClawData) {
+      const paddleFields = paddleData?.fields || {};
+      const openClawFields = openClawData?.fields || {};
+      const keys = Array.from(new Set([...Object.keys(paddleFields), ...Object.keys(openClawFields)]));
+      return keys.map((key) => {
+        const paddle = paddleFields[key] || {};
+        const openclaw = openClawFields[key] || {};
+        const matches = fieldValuesMatch(paddle, openclaw);
+        return {
+          key,
+          paddle,
+          openclaw,
+          matches,
+          note: comparisonNote(paddle, openclaw, matches)
+        };
+      });
+    }
+
+    function renderFieldComparisonCell(field) {
+      const value = fieldDisplayValue(field);
+      const meta = fieldMeta(field);
+      return `${escapeHtml(value)}${meta ? `<div class="value-meta">${escapeHtml(meta)}</div>` : ""}`;
+    }
+
+    function fieldValuesMatch(left, right) {
+      const leftValue = normalizedFieldValue(left);
+      const rightValue = normalizedFieldValue(right);
+      return Boolean(leftValue && rightValue && leftValue === rightValue);
+    }
+
+    function normalizedFieldValue(field) {
+      const value = field?.value;
+      if (value === null || value === undefined) return "";
+      return String(value).normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+
+    function fieldDisplayValue(field) {
+      const value = field?.value;
+      if (value === null || value === undefined || value === "") return "-";
+      return String(value);
+    }
+
+    function fieldMeta(field) {
+      const parts = [];
+      if (field?.status) parts.push(field.status);
+      if (typeof field?.confidence === "number") parts.push(Number(field.confidence).toFixed(2));
+      return parts.join(" | ");
+    }
+
+    function comparisonNote(paddle, openclaw, matches) {
+      const paddleValue = fieldDisplayValue(paddle);
+      const openClawValue = fieldDisplayValue(openclaw);
+      if (matches) return "Sama setelah normalisasi huruf, spasi, dan tanda baca.";
+      if (paddleValue === "-" && openClawValue === "-") return "Keduanya belum membaca field ini.";
+      if (paddleValue === "-") return `PaddleOCR kosong; OpenClaw membaca ${openClawValue}.`;
+      if (openClawValue === "-") return `OpenClaw kosong; PaddleOCR membaca ${paddleValue}.`;
+      return `PaddleOCR membaca ${paddleValue}; OpenClaw membaca ${openClawValue}.`;
     }
 
     copyJson.addEventListener("click", async () => {
@@ -869,12 +1251,13 @@ export async function POST(request) {
     }
 
     function renderEnrichmentPending(enrichment) {
-      enrichmentSection.style.display = "block";
+      const status = enrichment?.status || "not_applicable";
+      const fullAvailable = status === "queued" || status === "pending" || status === "completed";
+      enrichmentSection.style.display = fullAvailable ? "block" : "none";
       enrichmentFieldsBody.innerHTML = "";
       enrichmentJson.textContent = JSON.stringify(enrichment || {}, null, 2);
-      const status = enrichment?.status || "not_applicable";
       document.getElementById("enrichment-summary-status").textContent = status;
-      document.getElementById("enrichment-status").textContent = status === "queued" ? "Menunggu hasil enrichment" : status;
+      document.getElementById("enrichment-status").textContent = status === "queued" ? "Menunggu hasil background" : status;
       document.getElementById("enrichment-processing-time").textContent = "-";
       document.getElementById("enrichment-ocr-time").textContent = "-";
       document.getElementById("enrichment-decision").textContent = "-";
@@ -889,7 +1272,7 @@ export async function POST(request) {
       document.getElementById("enrichment-elapsed").textContent = formatMs(performance.now() - startedAt);
       try {
         const response = await fetch(`/ocr/enrichment/${encodeURIComponent(jobId)}`);
-        const data = await response.json();
+        const data = await parseJsonResponse(response, "Cek enrichment gagal");
         if (data.status === "completed") {
           renderEnrichmentResult(data.result, performance.now() - startedAt, jobId);
           return;
@@ -897,9 +1280,7 @@ export async function POST(request) {
       } catch {
         document.getElementById("enrichment-status").textContent = "Gagal cek enrichment";
       }
-      if (attempt < 90) {
-        enrichmentPollTimer = setTimeout(() => pollEnrichment(jobId, startedAt, attempt + 1), 2000);
-      }
+      enrichmentPollTimer = setTimeout(() => pollEnrichment(jobId, startedAt, attempt + 1), 2000);
     }
 
     function renderEnrichmentResult(result, elapsedMs, jobId) {
@@ -916,6 +1297,7 @@ export async function POST(request) {
       document.getElementById("enrichment-ocr-time").textContent = formatMs(selectedAttempt.ocr_ms);
       document.getElementById("enrichment-decision").textContent = assessment.decision || "-";
       document.getElementById("enrichment-job-id").textContent = jobId;
+      enrichmentSection.style.display = "block";
       enrichmentFieldsBody.innerHTML = "";
       Object.entries(result?.fields || {}).forEach(([key, field]) => {
         const row = document.createElement("tr");
