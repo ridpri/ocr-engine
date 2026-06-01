@@ -9,11 +9,23 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from ocr_engine.ocr.base import OcrResult, OcrToken
-from ocr_engine.quality import analyze_image_quality
+from ocr_engine.quality import analyze_image_preflight, analyze_image_quality
 from ocr_engine.service import build_input_assessment, parse_document_text
 
 
 class QualityTests(unittest.TestCase):
+    def test_analyze_image_preflight_flags_without_ocr(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "tiny.jpg"
+            Image.new("RGB", (220, 120), "white").save(image_path)
+
+            quality = analyze_image_preflight(image_path)
+
+        self.assertIn("document_too_small", quality["flags"])
+        self.assertIn("blur_detected", quality["flags"])
+        self.assertEqual(quality["metrics"]["ocr_token_count"], 0)
+        self.assertTrue(quality["metrics"]["pre_ocr"])
+
     def test_analyze_image_quality_flags_small_blurry_and_low_text_density(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "tiny.jpg"
@@ -26,6 +38,15 @@ class QualityTests(unittest.TestCase):
         self.assertIn("low_text_density", quality["flags"])
         self.assertEqual(quality["image"]["width"], 220)
         self.assertEqual(quality["image"]["height"], 120)
+
+    def test_analyze_image_preflight_allows_medium_card_image(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "card.jpg"
+            Image.new("RGB", (520, 402), "white").save(image_path)
+
+            quality = analyze_image_preflight(image_path)
+
+        self.assertNotIn("document_too_small", quality["flags"])
 
     def test_analyze_image_quality_flags_screen_capture_from_text(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -40,6 +61,19 @@ class QualityTests(unittest.TestCase):
 
         self.assertIn("screen_or_desktop_capture", quality["flags"])
         self.assertGreaterEqual(quality["metrics"]["ocr_token_count"], 2)
+
+    def test_analyze_image_quality_flags_screen_capture_with_plain_jpg_marker(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "screen.jpg"
+            Image.new("RGB", (1200, 800), "white").save(image_path)
+            ocr = OcrResult(
+                raw_text="TOSHIBA\nKTP SETYO jpg\nPROVINSI DKI JAKARTA",
+                tokens=[OcrToken("KTP", 0.9), OcrToken("TOSHIBA", 0.9)],
+            )
+
+            quality = analyze_image_quality(image_path, ocr)
+
+        self.assertIn("screen_or_desktop_capture", quality["flags"])
 
     def test_input_assessment_uses_quality_flags(self):
         raw_text = "PROVINSI DKI JAKARTA\nNIK : 3175010101900001\nNama : BUDI\nAlamat : JL MERDEKA"

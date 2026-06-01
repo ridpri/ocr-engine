@@ -9,6 +9,33 @@ WEB_STRUCTURE_SCORE_MIN = 0.7
 BAD_INPUT_QUALITY_FLAGS = {"screen_or_desktop_capture", "document_too_small", "blur_detected", "low_text_density"}
 
 
+def apply_stnk_web_usage_gate(record: dict[str, Any]) -> dict[str, Any]:
+    document_type = str(record.get("document_type") or "").upper()
+    if document_type != "STNK":
+        return record
+
+    usage_class = str(record.get("stnk_usage_class") or "").strip().lower()
+    if not usage_class or usage_class == "web_usable":
+        return record
+
+    assessment = record.setdefault("input_assessment", {})
+    reason_codes = assessment.setdefault("reason_codes", [])
+    _append_unique(reason_codes, f"stnk_web_usage_class:{usage_class}")
+    for reason in record.get("stnk_usage_reasons") or []:
+        _append_unique(reason_codes, f"stnk_web_usage:{reason}")
+
+    assessment["can_auto_publish"] = False
+    if assessment.get("decision") == "approved_for_auto":
+        if usage_class == "bad_input":
+            assessment["decision"] = "rejected_input"
+            assessment["message"] = "Foto STNK belum layak untuk pembelian web. Minta upload ulang."
+        else:
+            assessment["decision"] = "needs_review"
+            assessment["message"] = "Data STNK terbaca, tetapi belum memenuhi syarat pembelian web otomatis."
+    record["needs_review"] = True
+    return record
+
+
 def classify_stnk_record(record: dict[str, Any]) -> tuple[str, list[str]]:
     reasons: list[str] = []
     assessment = record.get("input_assessment") or {}
@@ -58,3 +85,8 @@ def classify_stnk_record(record: dict[str, Any]) -> tuple[str, list[str]]:
 
 def _float_value(value: Any) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value not in values:
+        values.append(value)

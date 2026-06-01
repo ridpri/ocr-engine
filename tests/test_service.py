@@ -91,6 +91,63 @@ class ServiceTests(unittest.TestCase):
         self.assertFalse(should_retry_stnk_highres("STNK", parsed, assessment))
         self.assertFalse(should_retry_stnk_highres("KTP", parsed, assessment))
 
+    def test_ktp_borderline_but_plausible_name_can_auto_pass(self):
+        raw_text = "\n".join(
+            [
+                "PROVINSI JAWA BARAT",
+                "KABUPATEN BEKASI",
+                "NIK : 3216064704060020",
+                "Nama : SALSABILA PUTRI DEWANTI",
+                "Tempat/Tgl Lahir : BEKASI, 07-04-2006",
+                "Jenis Kelamin : PEREMPUAN",
+                "Alamat : JL BIMA ASRI X NO.35",
+                "RT/RW : 003/008",
+                "Kel/Desa : LAMBANGSARI",
+                "Kecamatan : TAMBUN SELATAN",
+                "Agama : ISLAM",
+                "Status Perkawinan : BELUM KAWIN",
+                "Pekerjaan : PELAJAR/MAHASISWA",
+                "Kewarganegaraan : WNI",
+                "Berlaku Hingga : SEUMUR HIDUP",
+            ]
+        )
+        parsed = parse_document_text(raw_text, document_type_hint="KTP")
+        parsed.fields["nama"].confidence = 0.78
+
+        assessment = build_input_assessment(raw_text, parsed, "KTP", detect_document_type(raw_text))
+
+        self.assertEqual(assessment["decision"], "approved_for_auto")
+        self.assertNotIn("ktp_auto_low_confidence:nama", assessment["reason_codes"])
+
+    def test_ktp_implausible_borderline_name_stays_review(self):
+        raw_text = "\n".join(
+            [
+                "PROVINSI DKI JAKARTA",
+                "KOTA JAKARTA BARAT",
+                "NIK : 3173055003860011",
+                "Nama : YOKHEBED SETIOWATI SANTOSO",
+                "Tempat/Tgl Lahir : SLEMAN, 10-03-1986",
+                "Jenis Kelamin : PEREMPUAN",
+                "Alamat : JL KEDOYA AGAVE III CG/14",
+                "RT/RW : 010/004",
+                "Kel/Desa : KEDOYA SELATAN",
+                "Kecamatan : KEBON JERUK",
+                "Agama : KRISTEN",
+                "Status Perkawinan : KAWIN",
+                "Pekerjaan : MENGURUS RUMAH TANGGA",
+                "Kewarganegaraan : WNI",
+                "Berlaku Hingga : SEUMUR HIDUP",
+            ]
+        )
+        parsed = parse_document_text(raw_text, document_type_hint="KTP")
+        parsed.fields["nama"].value = "AKARTA BARA"
+        parsed.fields["nama"].confidence = 0.72
+
+        assessment = build_input_assessment(raw_text, parsed, "KTP", detect_document_type(raw_text))
+
+        self.assertEqual(assessment["decision"], "needs_review")
+        self.assertIn("ktp_auto_low_confidence:nama", assessment["reason_codes"])
+
 
 if __name__ == "__main__":
     unittest.main()

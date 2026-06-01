@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Iterable
+import math
 from typing import Any
 
 
@@ -9,7 +10,10 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> dict:
     rows = list(records)
     decisions: Counter[str] = Counter()
     warnings: Counter[str] = Counter()
+    reason_codes: Counter[str] = Counter()
     quality_flags: Counter[str] = Counter()
+    auto_publish: Counter[str] = Counter()
+    statuses: Counter[str] = Counter()
     stnk_usage_classes: Counter[str] = Counter()
     stnk_usage_reasons: Counter[str] = Counter()
     document_types: Counter[str] = Counter()
@@ -30,9 +34,12 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> dict:
     nik_fallback_times: list[float] = []
 
     for row in rows:
+        statuses[str(row.get("status", "unknown"))] += 1
         document_types[row.get("document_type", "UNKNOWN")] += 1
         assessment = row.get("input_assessment") or {}
         decisions[assessment.get("decision", "unknown")] += 1
+        reason_codes.update(assessment.get("reason_codes") or [])
+        auto_publish[str(bool(assessment.get("can_auto_publish"))).lower()] += 1
         warnings.update(row.get("warnings") or [])
         if row.get("stnk_usage_class"):
             stnk_usage_classes[str(row.get("stnk_usage_class"))] += 1
@@ -63,7 +70,10 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> dict:
     return {
         "total": len(rows),
         "document_types": dict(document_types),
+        "statuses": dict(statuses),
         "decisions": dict(decisions),
+        "reason_codes": dict(reason_codes),
+        "auto_publish": dict(auto_publish),
         "warnings": dict(warnings),
         "quality_flags": dict(quality_flags),
         "stnk_usage_classes": dict(stnk_usage_classes),
@@ -85,6 +95,7 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> dict:
             "attempt_total": _number_summary(attempt_total_times),
             "nik_fallback": _number_summary(nik_fallback_times),
         },
+        "slowest_records": _slowest_records(rows),
     }
 
 
@@ -95,9 +106,70 @@ def _append_number(values: list[float], value: Any) -> None:
 
 def _number_summary(values: list[float]) -> dict:
     if not values:
-        return {"min": None, "max": None, "avg": None}
+        return {
+            "count": 0,
+            "min": None,
+            "max": None,
+            "avg": None,
+            "p50": None,
+            "p95": None,
+            "p99": None,
+        }
+    sorted_values = sorted(values)
     return {
+        "count": len(values),
         "min": min(values),
         "max": max(values),
         "avg": round(sum(values) / len(values), 2),
+        "p50": _percentile(sorted_values, 50),
+        "p95": _percentile(sorted_values, 95),
+        "p99": _percentile(sorted_values, 99),
+    }
+
+
+def _percentile(sorted_values: list[float], percentile: float) -> float | None:
+    if not sorted_values:
+        return None
+    if len(sorted_values) == 1:
+        return round(sorted_values[0], 2)
+    rank = (percentile / 100) * (len(sorted_values) - 1)
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return round(sorted_values[lower], 2)
+    weight = rank - lower
+    value = sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * weight
+    return round(value, 2)
+
+
+def _slowest_records(rows: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
+    ranked = sorted(
+        (row for row in rows if isinstance(row.get("processing_time_ms"), (int, float))),
+        key=lambda row: float(row.get("processing_time_ms")),
+        reverse=True,
+    )
+    return [_slow_record_summary(row) for row in ranked[:limit]]
+
+
+def _slow_record_summary(row: dict[str, Any]) -> dict[str, Any]:
+    assessment = row.get("input_assessment") or {}
+    ocr = row.get("ocr") or {}
+    preprocess = ocr.get("preprocess") or {}
+    timings = ocr.get("timings") or {}
+    attempts = timings.get("attempts") or []
+    return {
+        "file": row.get("file"),
+        "document_type": row.get("document_type"),
+        "processing_time_ms": row.get("processing_time_ms"),
+        "decision": assessment.get("decision"),
+        "reason_codes": assessment.get("reason_codes") or [],
+        "quality_flags": (row.get("quality") or {}).get("flags") or [],
+        "retry_count": preprocess.get("retry_count"),
+        "selected_max_side": preprocess.get("selected_max_side"),
+        "pipeline_total_ms": timings.get("total_ms"),
+        "ocr_ms_total": round(
+            sum(float(attempt.get("ocr_ms", 0)) for attempt in attempts if isinstance(attempt.get("ocr_ms"), (int, float))),
+            2,
+        ),
+        "nik_fallback_ms": timings.get("nik_fallback_ms"),
     }

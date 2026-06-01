@@ -50,6 +50,58 @@ class KtpParserTests(unittest.TestCase):
         self.assertEqual(result.fields["berlaku_hingga"].value, "SEUMUR HIDUP")
         self.assertFalse(result.needs_review)
 
+    def test_parse_ktp_repairs_joined_initial_in_person_name(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KOTA DEPOK
+        NIK : 3174072003630005
+        Nama : ISMET SYARIFULA. FANE
+        Tempat/Tgl Lahir : MEDAN, 20-03-1963
+        Jenis Kelamin : LAKI-LAKI
+        Alamat : JL. PANGKALAN JATI III NO. 100
+        RT/RW : 001/002
+        Kel/Desa : PANGKALAN JATI
+        Kecamatan : CINERE
+        Berlaku Hingga : SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "ISMET SYARIFUL A. FANE")
+        self.assertGreaterEqual(result.fields["nama"].confidence, 0.8)
+
+    def test_parse_ktp_reads_values_after_fullwidth_colon_lines(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        KOTA ADMINISTRASI JAKARTA PUSAT
+        NIK
+        ：3175010101900001
+        Nama
+        ：BUDI SANTOSO
+        Tempat/Tgl Lahir
+        ：JAKARTA，01-01-1990
+        Alamat
+        ：JL MERDEKA NO 10
+        RT/RW
+        ：001／002
+        Kel/Desa
+        ：MENTENG
+        Kecamatan
+        ：MENTENG
+        Berlaku Hingga
+        ：SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nik"].value, "3175010101900001")
+        self.assertEqual(result.fields["nama"].value, "BUDI SANTOSO")
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "JAKARTA, 01-01-1990")
+        self.assertEqual(result.fields["alamat"].value, "JL MERDEKA NO 10")
+        self.assertEqual(result.fields["rt_rw"].value, "001/002")
+        self.assertEqual(result.fields["kelurahan_desa"].value, "MENTENG")
+        self.assertEqual(result.fields["berlaku_hingga"].value, "SEUMUR HIDUP")
+
     def test_parse_ktp_marks_missing_required_fields_for_review(self):
         result = parse_ktp_text("Nama : ANI")
 
@@ -77,9 +129,88 @@ class KtpParserTests(unittest.TestCase):
         self.assertEqual(result.fields["kabupaten_kota"].value, "BEKASI")
         self.assertEqual(result.fields["kabupaten_kota"].status, "ok")
 
-    def test_parse_ktp_adds_postal_code_from_region_database_lookup(self):
+    def test_parse_ktp_reads_ocr_variant_province_header(self):
+        raw_text = """
+        PR0VINSI JAWA BARAT
+        KABUPATEN BEKASI
+        NIK
+        3216064704060020
+        Nama
+        SALSABILA PUTRI DEWANTI
+        Alamat
+        JL BIMA ASRI X NO.35
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["provinsi"].value, "JAWA BARAT")
+        self.assertEqual(result.fields["provinsi"].status, "ok")
+
+    def test_parse_ktp_reads_joined_kabupaten_header(self):
         raw_text = """
         PROVINSI JAWA BARAT
+        KABUPATENCIREBON
+        NIK
+        3209126808870002
+        Nama
+        AGUSTINA PUSPITANINGRUM
+        Tempat/Tgl Lahir
+        BANDUNG,28-08-1987
+        Alamat
+        PERUM GPPJL RAFLESIA E.10
+        RT/RW
+        004/009
+        Kel/Desa
+        PAMENGKANG
+        Kecamatan
+        MUNDU
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kabupaten_kota"].value, "CIREBON")
+        self.assertEqual(result.fields["kabupaten_kota"].status, "ok")
+
+    def test_parse_ktp_reads_admin_area_line_after_province_header(self):
+        raw_text = """
+        PROVINSIDKI JAKARTA
+        JAKARTA BARAT
+        NIK
+        3201070809040011
+        Nama
+        FAREL SEPTIAN MANOSSOH
+        Alamat
+        ASRAMA POLRI
+        Kel/Desa
+        KEDOYA UTARA
+        Kecamatan
+        KEBON JERUK
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kabupaten_kota"].value, "JAKARTA BARAT")
+        self.assertEqual(result.fields["kabupaten_kota"].status, "ok")
+
+    def test_parse_ktp_reads_kab_kota_label_variant(self):
+        raw_text = """
+        PROVINSIDKI JAKARTA
+        NIK
+        3174033007760004
+        Nama
+        LEONARDO ARMAN
+        Kab/Kata
+        JAKARTA SELATAN
+        Alamat
+        JL. KAPTEN TANDEAN NO 86
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kabupaten_kota"].value, "JAKARTA SELATAN")
+
+    def test_parse_ktp_adds_postal_code_from_region_database_lookup(self):
+        raw_text = """
         KABUPATEN BEKASI
         NIK
         3216064704060020
@@ -95,13 +226,369 @@ class KtpParserTests(unittest.TestCase):
 
         with patch(
             "ocr_engine.parsers.ktp.lookup_postal_code",
-            return_value=PostalCodeMatch("17510", 0.95, ["kelurahan_desa:Lambangsari"]),
+            return_value=PostalCodeMatch(
+                "17510",
+                0.95,
+                ["kelurahan_desa:Lambangsari"],
+                kelurahan="Lambangsari",
+                kecamatan="Tambun Selatan",
+                nama_kota="Bekasi",
+                nama_provinsi="Jawa Barat",
+            ),
         ):
             result = parse_ktp_text(raw_text)
 
         self.assertEqual(result.fields["kode_pos"].value, "17510")
         self.assertEqual(result.fields["kode_pos"].status, "ok")
         self.assertEqual(result.fields["kode_pos"].raw, "db_kode_wilayah")
+        self.assertEqual(result.fields["provinsi"].value, "JAWA BARAT")
+        self.assertEqual(result.fields["provinsi"].status, "ok")
+
+    def test_parse_ktp_normalizes_joined_name_and_address_tokens(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KABUPATEN BEKASI
+        NIK
+        3216064704060020
+        Nama
+        SALSABILA PUTRIDEWANTI
+        Alamat
+        JLBIMA ASRIXNO.35
+        Kel/Desa
+        LAMBANGSARI
+        Kecamatan
+        TAMBUN SELATAN
+        Kewarganegaraan
+        WNI
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "SALSABILA PUTRI DEWANTI")
+        self.assertEqual(result.fields["alamat"].value, "JL BIMA ASRI X NO.35")
+
+    def test_parse_ktp_keeps_name_with_niko_suffix_and_reads_ttl_without_separator(self):
+        raw_text = """
+        PROVINSIBANTEN
+        KABUPATEN TANGERANG
+        NIK
+        3173056608680004
+        Nama
+        SHERLYHADISAPUTRO
+        Tempat/TglLahir
+        JAKARTA26-O8-1968
+        Jenis kelamin
+        PEREMPUAN
+        Alamal
+        PERUM TAMAN PARAHIYANGAN3
+        NO.50
+        RT/RW
+        006/020
+        Kel/Desa
+        BINONG
+        Kecamatan
+        CURUG
+        Pekerjaan
+        MENGURUS RUMAH TANGGA
+        Kewarganegaraan
+        WNI
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "JAKARTA, 26-08-1968")
+        self.assertEqual(result.fields["nama"].value, "SHERLYHADISAPUTRO")
+
+    def test_parse_ktp_does_not_confuse_niko_with_nik_label(self):
+        raw_text = """
+        PROVINSI BANTEN
+        KOTA TANGERANG SELATAN
+        NIK
+        3674060511780006
+        Nama
+        MOHAMAD BESAR NIKO
+        Tempat/TgILahir
+        SURABAYA.05-11-1978
+        Jenis Kelamin
+        LAKI-LAKI
+        Alamat
+        VILA DAGO NUSA DUA B. 1/16
+        RT/RW
+        002/020
+        KelDesa
+        BENDA BARU
+        Kecamatan
+        PAMULANG
+        Pekerjaan
+        KARYAWAN SWASTA
+        Kewarganegaraan: WNI
+        Berlaku Hingga :05-11-2017
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "MOHAMAD BESAR NIKO")
+        self.assertEqual(result.fields["kelurahan_desa"].value, "BENDA BARU")
+
+    def test_parse_ktp_extends_wrapped_single_token_name(self):
+        raw_text = """
+        PROVINSIDKIJAKARTA
+        JAKARTA PUSAT
+        NIK
+        3171071511970008
+        Nama
+        GUNAWANWILLYARVIN
+        PANGESTU
+        Tempat/TglLahir
+        JAKARTA,15-11-1997
+        Jenis kelamin
+        LAKI-LAKI
+        Alamat
+        KH.MAS MANSYUR NO. 27
+        Kel/Desa
+        KEBONKACANG
+        Kecamatan
+        TANAHABANG
+        Kewarganegaraan:WNI
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "GUNAWANWILLYARVIN PANGESTU")
+
+    def test_parse_ktp_recovers_reversed_region_block_after_rt(self):
+        raw_text = """
+        Berlaku Hingga
+        Kewarganegaraan: WNI
+        Pekerjaan
+        Status Perkawinan: KAWIN
+        Agama
+        Aiumut
+        Jenis kelamin
+        Tempal/TgiLhir
+        Nania
+        NIK
+        Kecamatan
+        Kel/Desa
+        RT/RW
+        SEUMUR HIDUP
+        KARYAWAN SWASTA
+        ISLAM
+        : ALAM BARAJO
+        KENALI BESAR
+        : 050/000
+        :KOMP.WISMA BUNGA BLOKCH
+        LAKI-LAKI
+        RIAU,18-09-1375
+        ZUBRAN HADI
+        1571071809790061
+        PROVINSIJAMBI
+        KOTAJAMBI
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "KENALI BESAR")
+        self.assertEqual(result.fields["kecamatan"].value, "ALAM BARAJO")
+
+    def test_parse_ktp_combines_split_citizenship_value_after_label(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KABUPATEN BEKASI
+        NIK
+        3216064704060020
+        Nama
+        SALSABILA PUTRI DEWANTI
+        Alamat
+        JL BIMA ASRI X NO.35
+        Kewarganegaraan
+        W
+        NI
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kewarganegaraan"].value, "WNI")
+        self.assertEqual(result.fields["kewarganegaraan"].status, "ok")
+
+    def test_parse_ktp_normalizes_ocr_variant_citizenship_value(self):
+        raw_text = """
+        KABUPATEN BEKASI
+        NIK
+        3216064704060020
+        Nama
+        SALSABILA PUTRI DEWANTI
+        Alamat
+        JL BIMA ASRI X NO.35
+        Kewargane
+        YNI
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kewarganegaraan"].value, "WNI")
+        self.assertEqual(result.fields["kewarganegaraan"].status, "ok")
+
+    def test_parse_ktp_reads_kawarganegaraan_label_with_wn_value(self):
+        raw_text = """
+        PROVINSI BANTEN
+        KOTA TANGERANG
+        NIK
+        3173020211730006
+        Nama
+        JAP JOBIE
+        Kawarganegaraan: WN
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kewarganegaraan"].value, "WNI")
+        self.assertEqual(result.fields["kewarganegaraan"].status, "ok")
+
+    def test_parse_ktp_reads_single_letter_citizenship_value_near_label(self):
+        raw_text = """
+        PROVINSI JAWA TENGAH
+        KOTA PEKALONGAN
+        NIK
+        3375042104970004
+        Nama
+        DEWI MASITOH
+        Kewarganegaraan
+        U
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kewarganegaraan"].value, "WNI")
+        self.assertEqual(result.fields["kewarganegaraan"].status, "ok")
+
+    def test_parse_ktp_infers_dki_jakarta_from_jakarta_admin_area(self):
+        raw_text = """
+        PROVINSLDKLJAKARTA
+        JAKARTAUTARA
+        NIK
+        3173021210630007
+        Nama
+        IWAN TUKIMIN
+        Kewarganegaraan
+        WNI
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kabupaten_kota"].value, "JAKARTA UTARA")
+        self.assertEqual(result.fields["provinsi"].value, "DKI JAKARTA")
+
+    def test_parse_ktp_reads_bare_jakarta_admin_area_line(self):
+        raw_text = """
+        NIK
+        3173065505780001
+        Nama
+        TJONG FUI SIAN
+        JAKARTA BARAT
+        Kewarganegaraan
+        WNI
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kabupaten_kota"].value, "JAKARTA BARAT")
+        self.assertEqual(result.fields["provinsi"].value, "DKI JAKARTA")
+
+    def test_parse_ktp_infers_jambi_province_from_city_name(self):
+        raw_text = """
+        KOTAJAMBI
+        NIK
+        1571010601780001
+        Nama
+        MUSTAKIN
+        Kewargane
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kabupaten_kota"].value, "JAMBI")
+        self.assertEqual(result.fields["provinsi"].value, "JAMBI")
+
+    def test_parse_ktp_treats_job_label_as_invalid_kelurahan_candidate(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KOTA CIREBON
+        NIK
+        3274032204790008
+        Nama
+        ANDRI PRASETYANTO
+        Alamat
+        JL KALITANUNG NO 09
+        Kal/Desa
+        Pokerjaan
+        HARJAMUKTI
+        Kecamatan
+        HARJAMUKTI
+        Kewarganegaraan
+        WNI
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "HARJAMUKTI")
+        self.assertEqual(result.fields["kelurahan_desa"].status, "ok")
+
+    def test_parse_ktp_reads_address_from_almal_label_variant(self):
+        raw_text = """
+        PROVINSI JAWA TENGAH
+        KOTA SEMARANG
+        NIK
+        3374114208810004
+        Nama
+        DANI ANGGOROWATI
+        Almal
+        JA ESTETIKA IARAT,120
+        AT.RW
+        004/008
+        Kel/Desa
+        BANYUMANIK
+        Kecamatan
+        PEDALANGAN
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].status, "ok")
+        self.assertEqual(result.fields["alamat"].value, "JL ESTETIKA BARAT,120")
+
+    def test_parse_ktp_defaults_missing_citizenship_to_wni_for_valid_nik(self):
+        raw_text = """
+        KABUPATEN BEKASI
+        NIK
+        3216064704060020
+        Nama
+        SALSABILA PUTRI DEWANTI
+        Alamat
+        JL BIMA ASRI X NO.35
+        Kel/Desa
+        LAMBANGSARI
+        Kecamatan
+        TAMBUN SELATAN
+        Kewargane
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kewarganegaraan"].value, "WNI")
+        self.assertEqual(result.fields["kewarganegaraan"].status, "ok")
 
     def test_postal_code_index_matches_ktp_regions_to_kelurahan_code(self):
         index = PostalCodeIndex.from_records(
@@ -140,6 +627,220 @@ class KtpParserTests(unittest.TestCase):
 
         self.assertIsNotNone(match)
         self.assertEqual(match.kode_pos, "17510")
+
+    def test_postal_code_index_matches_joined_locality_and_province_spacing(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "11520",
+                    "address": "Kedoya Selatan, Kebon Jeruk, Jakarta Barat, DKI Jakarta 11520",
+                    "locality": "Kedoya Selatan",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Barat",
+                    "province_name": "DKI Jakarta",
+                }
+            ]
+        )
+        parsed = parse_ktp_text(
+            """
+            PROVINSIDKIJAKARTA
+            JAKARTA BARAT
+            NIK 3173055003860011
+            Nama YOKHEBED SETIOWATI SANTOSO
+            Alamat JL. KEDOYA AGAVE III C6/14
+            Kel/Desa KEDOYASELATAN
+            Kecamatan KEBONJERUK
+            """
+        )
+
+        match = index.lookup(parsed.fields)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kode_pos, "11520")
+
+    def test_postal_code_index_does_not_stop_at_wrong_exact_locality(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "15520",
+                    "address": "Pondok Jaya, Sepatan, Kabupaten Tangerang, Banten",
+                    "locality": "Pondok Jaya",
+                    "sifat_pos": "kel.",
+                    "city_name": "Tangerang",
+                    "province_name": "Banten",
+                },
+                {
+                    "kode_pos": "16438",
+                    "address": "Pondokjaya, Cipayung, Kota Depok, Jawa Barat",
+                    "locality": "Pondokjaya",
+                    "sifat_pos": "kel.",
+                    "city_name": "Depok",
+                    "province_name": "Jawa Barat",
+                    "district_name": "Cipayung",
+                },
+            ]
+        )
+        parsed = parse_ktp_text(
+            """
+            PROVINSI JAWA BARAT
+            KOTA DEPOK
+            NIK 3276011904710005
+            Nama SOLAHUDIN
+            Alamat PERMATADEPOKBERLIAN 1111.5/4
+            Kel/Desa PONDOK JAYA
+            Kecamatan CIPAYUNG
+            """
+        )
+
+        match = index.lookup(parsed.fields)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kode_pos, "16438")
+
+    def test_postal_code_index_matches_province_alias_and_compound_locality(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "51134",
+                    "address": "Kertoharjo, Pekalongan Selatan, Kota Pekalongan, Jawa Tengah",
+                    "locality": "Kertoharjo",
+                    "sifat_pos": "kel.",
+                    "city_name": "Pekalongan",
+                    "province_name": "Jawa Tengah",
+                },
+                {
+                    "kode_pos": "55112",
+                    "address": "Purwo Kinanti, Pakualaman, Kota Yogyakarta, DI Yogyakarta",
+                    "locality": "Purwo Kinanti",
+                    "sifat_pos": "kel.",
+                    "city_name": "Yogyakarta",
+                    "province_name": "DI Yogyakarta",
+                },
+            ]
+        )
+        parsed = parse_ktp_text(
+            """
+            PROVINSI JAWA TENGAH
+            KOTA PEKALONGAN
+            NIK 3375042104970004
+            Nama DEWI MASITOH
+            Kel/Desa KURIPAN KERTOHARJO
+            Kecamatan PEKALONGAN SELATAN
+            """
+        )
+        self.assertEqual(index.lookup(parsed.fields).kode_pos, "51134")
+
+        parsed = parse_ktp_text(
+            """
+            PROVINSI DAERAH ISTIMEWA YOGYAKARTA
+            KOTA YOGYAKARTA
+            NIK 3471070101010001
+            Nama CONTOH
+            Kel/Desa PURWOKINANTI
+            Kecamatan PAKUALAMAN
+            """
+        )
+        self.assertEqual(index.lookup(parsed.fields).kode_pos, "55112")
+
+    def test_postal_code_index_tolerates_truncated_province_name_from_ocr(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12430",
+                    "address": "Cilandak Barat, Cilandak, Jakarta Selatan, DKI Jakarta 12430",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Cilandak",
+                }
+            ]
+        )
+        parsed = parse_ktp_text(
+            """
+            PROVINSI DKI JAKART
+            JAKARTA SELATAN
+            NIK 3174065504690001
+            Nama DEWI PUJIASTUTI
+            Tempat/Tgl Lahir BANDUNG, 15-04-1969
+            Jenis Kelamin PEREMPUAN
+            Alamat JLCILANDAK V UJUNG /KAV.2
+            RT/RW 002/003
+            Kel/Desa CILANDAK BARAT
+            Kecamatan CILANDAK
+            Kewarganegaraan WNI
+            Berlaku Hingga 15-04-2016
+            """
+        )
+
+        match = index.lookup(parsed.fields)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kode_pos, "12430")
+
+    def test_parse_ktp_adds_postal_code_for_truncated_dki_jakarta_sample(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12430",
+                    "address": "Cilandak Barat, Cilandak, Jakarta Selatan, DKI Jakarta 12430",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Cilandak",
+                }
+            ]
+        )
+        raw_text = """
+        PROVINSI DKI JAKART
+        JAKARTA SELATAN
+        NIK
+        3174065504690001
+        Nama
+        DEWI PUJIASTUTI
+        Tempat/Tgl Lahir
+        :BANDUNG,15-04-1969
+        Jenis Kelamin
+        :PEREMPUAN
+        Gol. Darah : O
+        Alamat
+        : JLCILANDAK V UJUNG /KAV.2
+        RT/RW
+        :002/ 003
+        Kel/Desa
+        CILANDAK BARAT
+        Kecamatan
+        CILANDAK
+        Agama
+        ISLAM
+        Status Perkawinan : KAWIN
+        Pekerjaan
+        : KARYAWAN SWASTA
+        Kewarganegaraan: WNI
+        Berlaku Hingga
+        :15-04-2016
+        """
+
+        with patch("ocr_engine.parsers.ktp.lookup_postal_code", side_effect=lambda fields: index.lookup(fields)):
+            result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kode_pos"].value, "12430")
+        self.assertEqual(result.fields["provinsi"].value, "DKI JAKARTA")
+        self.assertEqual(result.fields["kabupaten_kota"].value, "JAKARTA SELATAN")
+
+    def test_parse_ktp_normalizes_joined_jalan_prefix_in_address(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA SELATAN
+        NIK : 3174065504690001
+        Nama : DEWI PUJIASTUTI
+        Alamat : JLCILANDAK V UJUNG /KAV.2
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].value, "JL CILANDAK V UJUNG /KAV.2")
 
     def test_parse_ktp_does_not_accept_blood_type_label_as_address(self):
         raw_text = """
@@ -263,6 +964,18 @@ class KtpParserTests(unittest.TestCase):
 
         self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "BEKASI, 07-04-2006")
 
+    def test_parse_ktp_birth_place_date_strips_joined_tgl_lahir_noise(self):
+        raw_text = """
+        NIK : 3216064704060020
+        Nama : SALSABILA PUTRIDEWANTI
+        TGLLAHIR BEKASI, 07-04-2006
+        Alamat : JLBIMA ASRIX NO.35
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "BEKASI, 07-04-2006")
+
     def test_parse_ktp_birth_place_date_repairs_space_between_day_and_month(self):
         raw_text = """
         NIK : 3276011904710005
@@ -291,12 +1004,65 @@ class KtpParserTests(unittest.TestCase):
 
         self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "JAKARTA, 15-01-1974")
 
+    def test_parse_ktp_repairs_truncated_birth_year_from_nik(self):
+        raw_text = """
+        PROVINSI BANTEN
+        KOTA TANGERANG
+        NIK
+        3671090305770003
+        Nama
+        LILIK EKO MURSITO
+        Tempat/Tgl Lahir
+        JAKARTA
+        03-05-197
+        Alamat
+        RAYA BLOK E-1 NO.34
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "JAKARTA, 03-05-1977")
+
+    def test_parse_ktp_repairs_malformed_birth_date_from_nik(self):
+        raw_text = """
+        NIK
+        1571071809790061
+        Nania
+        ZUBRAN HADI
+        Tempat/Tgi Luhir
+        : RIAU,18-09-137%
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "RIAU, 18-09-1979")
+
+    def test_parse_ktp_repairs_unrealistic_birth_year_from_nik(self):
+        raw_text = """
+        PROVINSIJAMBI
+        KOTAJAMBI
+        NIK
+        1571071809790061
+        Nania
+        ZUBRAN HADI
+        Tempat/Tgi Luhir
+         RIAU,18-09-1379
+        Alamat
+        KOMP.WISMA BUNGA BLOK C.I
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "RIAU, 18-09-1979")
+
     def test_parse_ktp_birth_place_date_repairs_ocr_noise_in_date_digits(self):
         cases = [
             ("PARSOBURAN, 11-10-199:3", "PARSOBURAN, 11-10-1993"),
             ("BANDUNG.10-O61997", "BANDUNG, 10-06-1997"),
             ("SAMOSIR.06-04-196S", "SAMOSIR, 06-04-1965"),
             ("KOTA CIREBON, 22-04-1979", "KOTA CIREBON, 22-04-1979"),
+            ("Tempat/ToiLahir SURAKARTA. 20-10-1991", "SURAKARTA, 20-10-1991"),
+            ("JAKARTA, 09-01Â·1957", "JAKARTA, 09-01-1957"),
         ]
         for value, expected in cases:
             with self.subTest(value=value):
@@ -342,6 +1108,527 @@ class KtpParserTests(unittest.TestCase):
         result = parse_ktp_text(raw_text)
 
         self.assertEqual(result.fields["alamat"].value, "JL MERDEKA NO 10")
+
+    def test_parse_ktp_keeps_address_with_kota_neighborhood_name(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KABUPATEN BOGOR
+        NIK
+        3201024507690014
+        Nama
+        : GRACE WIDYA TJAHJADI
+        Tempat/Tgl Lahir
+        : JAKARTA, 05-07-1969
+        Jenis Kelamin
+        :PEREMPUAN
+        Gol. Darah: AB
+        Alamat
+        : KOTA WISATA BLOK A.4/53
+        RT/RW
+        :002/ 010
+        Kel/Desa
+        :NAGRAK
+        Kecamatan
+        : GUNUNG PUTRI
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].value, "KOTA WISATA BLOK A.4/53")
+        self.assertNotIn("missing_required:alamat", result.warnings)
+
+    def test_parse_ktp_combines_multiline_address_after_label(self):
+        raw_text = """
+        NIK
+        3175072802780006
+        Name
+        :MUHAMMAD NORMAN
+        Alamat
+        : TMN BUARAN INDAH III BLK
+        B3/10
+        RT/RW
+        :006/ 013
+        Kel/Desa
+        :KLENDER
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].value, "TMN BUARAN INDAH III BLK B3/10")
+
+    def test_parse_ktp_normalizes_common_address_ocr_noise(self):
+        raw_text = """
+        NIK : 3171072802680002
+        Nama : FEBIANTORI
+        Tempat/Tgl Lahir : PADANG, 28-02-1968
+        Alamat : JL BEND. HIUR VI/17.
+        RT/RW : 010/001
+        Kel/Desa : BENDUNGAN HILIR
+        Kecamatan : TANAH ABANG
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].value, "JL BEND. HILIR VI/17.")
+
+    def test_parse_ktp_splits_joined_block_address_token(self):
+        raw_text = """
+        NIK : 1671067108810007
+        Nama : ROSMALA DEWI
+        Tempat/Tgl Lahir : PALEMBANG, 31-08-1981
+        Alamat : PERUM PANORAMA BALIRESIDENCE BLOKC 9/28
+        RT/RW : 003/006
+        Kel/Desa : PUTAT NUTUG
+        Kecamatan : CISEENG
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].value, "PERUM PANORAMA BALI RESIDENCE BLOK C 9/28")
+
+    def test_parse_ktp_accepts_jalan_abbreviation_as_address(self):
+        raw_text = """
+        NIK
+        :3172057105880006
+        Nama
+        :NOVITA
+        Alamat
+        J. BUDI MULIA
+        RT/RW
+        001/004
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].value, "J. BUDI MULIA")
+
+    def test_parse_ktp_finds_rt_rw_before_shifted_label(self):
+        raw_text = """
+        NIK
+        3671090305770003
+        Nama
+        LILIK EKO MURSITO
+        Alamat
+        RAYA BLOK E-1 NO.34
+        004/010
+        RT/RW
+        Kel/Desa
+        PANUNGGANGAN BARAT
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["rt_rw"].value, "004/010")
+
+    def test_parse_ktp_reads_kedesa_label_variant(self):
+        raw_text = """
+        NIK
+        3375042104970004
+        Nama
+        DEWI MASITOH
+        KeDesa
+        KURIPAN KERTOHARJO
+        Kecamatan
+        PEKALONGAN SELATAN
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "KURIPAN KERTOHARJO")
+
+    def test_parse_ktp_reads_desa_kel_and_kel_oosa_variants(self):
+        result = parse_ktp_text(
+            """
+            NIK
+            3174033007760004
+            Nama
+            LEONARDO ARMAN
+            Desa/Kol
+            MAMPANG PRAPATAN
+            Kecamatan
+            MAMPANG PRAPATAN
+            """
+        )
+        self.assertEqual(result.fields["kelurahan_desa"].value, "MAMPANG PRAPATAN")
+
+        result = parse_ktp_text(
+            """
+            NIK
+            2171021907759004
+            Nama
+            SIGIT SANYOTO
+            Kel/Oosa
+            TAMAN BALOI
+            Kecamatan
+            BATAM KOTA
+            """
+        )
+        self.assertEqual(result.fields["kelurahan_desa"].value, "TAMAN BALOI")
+
+    def test_parse_ktp_repairs_region_values_equal_to_name_or_city(self):
+        raw_text = """
+        PROVINSIJAMBI
+        KOTAJAMBI
+        NIK
+        1571071809790061
+        Nania
+        ZUBRAN HADI
+        Kecamatan ALAM BARAJO
+        Kel/Desa
+        :KENALI BESAR
+        RT/RW
+        :050/000
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kabupaten_kota"].value, "JAMBI")
+        self.assertEqual(result.fields["kelurahan_desa"].value, "KENALI BESAR")
+        self.assertEqual(result.fields["kecamatan"].value, "ALAM BARAJO")
+
+    def test_parse_ktp_repairs_name_from_rotated_transposed_layout(self):
+        raw_text = """
+        Berlaku Hingga
+        Kewarganegaraan:WNI
+        Pekerjaan
+        Status Perkawinan: KAWIN
+        Agama
+        Alamat
+        Jenis kelamin
+        Tempat/TgiLahir
+        Nama
+        NIK
+        Kecamatan
+        Kel/Desa
+        RT/RW
+        SEUMUR HIDUP
+        WIRASWASTA
+        :ISLAM
+        : SIMPANG EMPAT SIPIN
+        MUSTAKIN
+        1571010601780141
+        TELANAIPURA
+        033/000
+        PERUM HAMSARI NO. 91
+        LAKI-LAKI
+        PATI, 06-01-1978
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "MUSTAKIN")
+
+    def test_parse_ktp_repairs_transposed_value_column(self):
+        raw_text = """
+        Berlaku Hingga
+        Kewarganegaraan
+        Pekerjaan
+        Status Perkawinan
+        Agama
+        Alamal
+        Jenis kelamin
+        Tempat/TgiLahir
+        Nama
+        Kecamatan
+        Kel/Desa
+        RT/AW
+        SEUMUR HIDUP
+        WNI
+        :MENGURUS RUMAH TANGGA
+        KAWIN
+        KRISTEN
+        KEBONJERUK
+        KEDOYASELATAN
+        010/004
+        JL. KEDOYA AGAVE III C6/14
+        PEREMPUAN
+        SLEMAN, 10-03-1986
+        YOKHEBED SETIOWATISANTOSO
+        3173055003860011
+        PROVINSIDKIJAKARTA
+        JAKARTA BARAT
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "YOKHEBED SETIOWATI SANTOSO")
+        self.assertEqual(result.fields["kelurahan_desa"].value, "KEDOYA SELATAN")
+        self.assertEqual(result.fields["kecamatan"].value, "KEBON JERUK")
+
+    def test_parse_ktp_uses_postal_match_to_canonicalize_joined_regions(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        KOTA JAKARTA BARAT
+        NIK : 3173055003860011
+        Nama : YOKHEBED SETIOWATISANTOSO
+        Tempat/Tgl Lahir : SLEMAN, 10-03-1986
+        Jenis Kelamin : PEREMPUAN
+        Alamat : JL. KEDOYA AGAVE III C6/14
+        RT/RW : 010/004
+        Kel/Desa : KEDOYASELATAN
+        Kecamatan : KEBONJERUK
+        """
+
+        with patch(
+            "ocr_engine.parsers.ktp.lookup_postal_code",
+            return_value=PostalCodeMatch(
+                "11520",
+                0.95,
+                ["kelurahan_desa:Kedoya Selatan", "kecamatan:Kebon Jeruk"],
+                kelurahan="Kedoya Selatan",
+                kecamatan="Kebon Jeruk",
+                match_status="exact_match",
+            ),
+        ):
+            result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "KEDOYA SELATAN")
+        self.assertEqual(result.fields["kecamatan"].value, "KEBON JERUK")
+        self.assertEqual(result.fields["kode_pos"].value, "11520")
+
+    def test_parse_ktp_uses_postal_match_to_restore_kelurahan_suffix(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA UTARA
+        NIK : 3172062406720005
+        Nama : TEGUH IMAN, SE,MM
+        Tempat/Tgl Lahir : JAKARTA,24-06-1972
+        Alamat
+        Jenis kelamin : LAKI-LAKI
+        J HARAPAN III NO.6
+        RT/RW : KELAPA GADING BARAT
+        003/001
+        Kecamatan
+        Kel/Desa
+        KELAPA GADING
+        """
+
+        with patch(
+            "ocr_engine.parsers.ktp.lookup_postal_code",
+            return_value=PostalCodeMatch(
+                "14240",
+                0.95,
+                ["kelurahan_desa:Kelapa Gading Barat", "kecamatan:KELAPA GADING"],
+                kelurahan="Kelapa Gading Barat",
+                kecamatan="Kelapa Gading",
+                match_status="exact_match",
+            ),
+        ):
+            result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "KELAPA GADING BARAT")
+        self.assertEqual(result.fields["kecamatan"].value, "KELAPA GADING")
+        self.assertEqual(result.fields["kode_pos"].value, "14240")
+
+    def test_parse_ktp_repairs_single_character_name_from_transposed_value_column(self):
+        raw_text = """
+        Berlaku Hingga
+        Kewarganegaraan:WNI
+        Pekerjaan
+        Status Perkawinan : KAWIN
+        Agoma
+        Alamat
+        Jenis Kdamin
+        Tempal/Tgl Lahir
+        Nama
+        A
+        Kecamatan
+        Kol/Desa
+        AT/RW
+        .
+        :15052017
+        :MENGURUS RUMAH TANGGA
+        :KALIDERES
+        :TEGAL ALUR
+        :JLN.BIMA BLOKC 11/7
+        :PEREMPUAN
+        SINKAWANG, 15-05-1978
+        :TJONG FUI SIAN
+        3173065505780001
+        :BUDHA
+        :006/ 007
+        PROVINSI DKI JAKARTA
+        JAKARTA BARAT
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "TJONG FUI SIAN")
+
+    def test_parse_ktp_repairs_single_character_name_before_trailing_noise(self):
+        raw_text = """
+        Nama
+        A
+        Kecamatan
+        Kol/Desa
+        AT/RW
+        :KALIDERES
+        :TEGAL ALUR
+        :JLN.BIMA BLOKC 11/7
+        :PEREMPUAN
+        SINKAWANG, 15-05-1978
+        :TJONG FUI SIAN
+        3173065505780001
+        :006/ 007
+        PROVINSI DKI JAKARTA
+        JAKARTA BARAT
+        Gol. Darah :
+        JAUGARNTABA TBAAT
+        ARY
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "TJONG FUI SIAN")
+
+    def test_parse_ktp_prefers_full_kecamatan_after_short_kec_fragment(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KABUPATEN BOGOR
+        NIK
+        3201260402980005
+        Nama
+        MOH. HIFDZI YUSA
+        Kel/Desa
+        GADOG
+        Kec
+        natan
+        MEGAMENDUNG
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kecamatan"].value, "MEGAMENDUNG")
+
+    def test_parse_ktp_repairs_regions_when_values_are_transposed_around_labels(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA TIMUR
+        NIK
+        3175046103690003
+        Nama
+        :TRISUPRIHATIN
+        Alamat
+        :J.BHPII BLOKEE-2
+        RT/RW
+        :001/006
+        Kel/Desa
+        :KRAMATJATI
+        :DUKUH
+        Kecamatan
+        Agama
+        :KATHOLIK
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "DUKUH")
+        self.assertEqual(result.fields["kecamatan"].value, "KRAMAT JATI")
+
+    def test_parse_ktp_repairs_kelurahan_when_desa_kel_precedes_kabupaten_kota_label(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        NIK
+        3174033007760004
+        Nama
+        LEONARDO ARMAN
+        RT/RW
+        MAMPANG PRAPATAN
+        003/001
+        Kecamatan
+        Desa/Kel
+        MAMPANG PRAPATAN
+        Kab/ Kota
+        JAKARTA SELATAN
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "MAMPANG PRAPATAN")
+        self.assertEqual(result.fields["kecamatan"].value, "MAMPANG PRAPATAN")
+
+    def test_parse_ktp_repairs_kelurahan_from_rotated_transposed_layout(self):
+        raw_text = """
+        Borlaku Hingga
+        Kowarganegaraan: WNI
+        Pekerjaan
+        Status Perkawinan: KAWiN
+        Agama
+        Alamat
+        Jenis Kelamin
+        Tempat/Tgl Lahir
+        Nama
+        NIK
+        Kecamatan
+        Kel/Desa
+        RT/RW
+        :15-08-2016
+        :KARYAWAN SWASTA
+        :KRISTEN
+        :KEMBANGAN
+        :JL.AL MUBAROK II NO. 32.C
+        :LAKI-LAKI
+        :JAKARTA,15-08-1972
+        :TAN AGUS SETIADI
+        3173081508720009
+        :JOGLO
+        008/002
+        JAKARTA BARAT
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "JOGLO")
+        self.assertEqual(result.fields["kecamatan"].value, "KEMBANGAN")
+
+    def test_parse_ktp_repairs_noisy_female_and_lifetime_expiry(self):
+        raw_text = """
+        NIK
+        3171075904930002
+        Nams
+        BULLY NUR IST IKOMAN
+        pai/TgiLshr-
+        JAKARTA,16-0-1993
+        PERENPLIAN GOLDAA:
+        BerakaiHi
+        SEUSUR HOUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["jenis_kelamin"].value, "PEREMPUAN")
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "JAKARTA, 19-04-1993")
+        self.assertEqual(result.fields["berlaku_hingga"].value, "SEUMUR HIDUP")
+
+    def test_parse_ktp_does_not_accept_noisy_lifetime_expiry_as_name(self):
+        raw_text = """
+        PROVINSIDKIJAKARIA
+        JAKARTAPUSAT
+        3171075904730002
+        BULLY NUR ISTIKOMAH
+        MlaLahy
+        PERENUAN COL DAAHD
+        JAKARTA, 16-0G-1993
+        Aigmat
+        ATRW
+        BL.OK.BL VIVT9
+        KelDeca
+        BENDLINGANHE
+        0n00
+        Kecanntar
+        TANAHABANG
+        edkaWiNaNc BELUMKAWIN
+        :ISLAM
+        :WNI
+        CKARYAWANSWASTA
+        SEUSUR HOUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["berlaku_hingga"].value, "SEUMUR HIDUP")
+        self.assertEqual(result.fields["nama"].value, "BULLY NUR ISTIKOMAH")
+        self.assertEqual(result.fields["jenis_kelamin"].value, "PEREMPUAN")
 
     def test_parse_ktp_fuzzy_status_perkawinan_from_ocr_typo_and_joined_value(self):
         raw_text = """
@@ -402,6 +1689,47 @@ class KtpParserTests(unittest.TestCase):
         result = parse_ktp_text(raw_text)
 
         self.assertEqual(result.fields["status_perkawinan"].value, "BELUM KAWIN")
+
+    def test_parse_ktp_repairs_truncated_marital_status(self):
+        raw_text = """
+        NIK : 3174033007760004
+        Nama : LEONARDO ARMAN
+        Status Perkawinan BELUM KAWN
+        Pekerjaan
+        KARYAWAN SWASTA
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["status_perkawinan"].value, "BELUM KAWIN")
+
+    def test_parse_ktp_defaults_wni_when_ktp_nik_valid_and_label_missing(self):
+        raw_text = """
+        NIK
+        3172062406720005
+        Nama
+        TEGUH IMAN
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kewarganegaraan"].value, "WNI")
+
+    def test_parse_ktp_repairs_tni_job_with_city_suffix(self):
+        raw_text = """
+        NIK
+        3578170504790011
+        Nama
+        OSBER SITUMORANG
+        Pekerjaan
+        : TENTARA NASIONAL INDONESIA (TNI)KOTA SURABAYA
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["pekerjaan"].value, "TENTARA NASIONAL INDONESIA (TNI)")
 
     def test_parse_ktp_repairs_inline_noisy_marital_status_label_variants(self):
         cases = [
@@ -531,6 +1859,33 @@ class KtpParserTests(unittest.TestCase):
         self.assertEqual(result.fields["kelurahan_desa"].value, "ANCOL")
         self.assertEqual(result.fields["kecamatan"].value, "CIPONDOH")
 
+    def test_parse_ktp_repairs_kol_dasa_and_batam_kecamatan(self):
+        raw_text = """
+        PROVINSI KEPULAUAN RIAU
+        KOTA BATAM
+        NIK
+        2171021907759004
+        Nama
+        SIGIT SANYOTO
+        Tempat/Tgl Lahur
+        YOGYAKARTA, 19-07 1975
+        Alamat
+        PERUM MARCELIA BLOK B NO.245
+        RT/RW
+        002/009
+        Kol/Dasa
+        TAMAN BALOI
+        Kecamatan
+        BATAM KOTA
+        Kowarganegaraan:
+        WNI
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "TAMAN BALOI")
+        self.assertEqual(result.fields["kecamatan"].value, "BATAM KOTA")
+
     def test_parse_ktp_repairs_split_and_typo_kecamatan_label(self):
         raw_text = """
         NIK : 3201260402980005
@@ -551,6 +1906,87 @@ class KtpParserTests(unittest.TestCase):
         result = parse_ktp_text(raw_text)
 
         self.assertEqual(result.fields["kecamatan"].value, "MEGAMENDUNG")
+
+    def test_parse_ktp_repairs_tit_rt_rw_and_ecematan_label(self):
+        raw_text = """
+        PROVINSI BANTEN
+        KOTA CILEGON
+        NIK
+        3672055905860005
+        Nama
+        MEILANNIH
+        Alamat
+        JL. JENDRAL ACHMAD YANI NO.
+        83
+        TIT/RW
+        002/002
+        VOasa
+        SUKMAJAYA
+        ecematan
+        JOMBANG
+        Agama
+        BUDHA
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["rt_rw"].value, "002/002")
+        self.assertEqual(result.fields["kelurahan_desa"].value, "SUKMAJAYA")
+        self.assertEqual(result.fields["kecamatan"].value, "JOMBANG")
+
+    def test_parse_ktp_repairs_regions_after_keildesa_and_kicanalan_labels(self):
+        raw_text = """
+        PROVINSIDKI JAKARTA
+        JAKARTA UTARA
+        NTR
+        3172052508790003
+        Nama
+        LAUFUCHANG
+        Alsmat
+        J.PANTAIKUTA VI NO.7
+        RYRW
+        KeilDesa
+        011/010
+        Kicanalan
+        ANCOL
+        BUDHA
+        PADEMANGAN
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["rt_rw"].value, "011/010")
+        self.assertEqual(result.fields["kelurahan_desa"].value, "ANCOL")
+        self.assertEqual(result.fields["kecamatan"].value, "PADEMANGAN")
+
+    def test_parse_ktp_cleans_noisy_birth_and_region_fragments(self):
+        raw_text = """
+        PROVINSI JAWA BARAT
+        KOTA BEKASI
+        NIK
+        3275126405920003
+        Nama
+        IPTHY AKSARA GATI
+        Tempat/IglLahir
+        :BEKASI.24-05-1992
+        Jenis Kelamin
+        PEREMPUAN
+        Alamat
+        KP.RAWA BACANG NO.167
+        AT/RW
+        005/015
+        el/Desa
+        JATIRAHAYU
+        ecamatan
+        PONDOK MELAT!
+        Agan 3
+        ISLAM
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "BEKASI, 24-05-1992")
+        self.assertEqual(result.fields["kecamatan"].value, "PONDOK MELATI")
 
     def test_parse_ktp_accepts_region_value_containing_nik_substring(self):
         raw_text = """
@@ -582,6 +2018,177 @@ class KtpParserTests(unittest.TestCase):
         result = parse_ktp_text(raw_text)
 
         self.assertEqual(result.fields["kecamatan"].value, "CIPONDOH")
+
+    def test_parse_ktp_recovers_noisy_expiry_and_region_order(self):
+        raw_text = """
+        PROVINSI JAWA TENGAH
+        KOTA SEMARANG
+        NIK
+        3374114208810004
+        Nama
+        DANI ANGGOROWATI
+        Tempatl Tgl Lahe
+        KAB.SEMARANG, 02-08-1981
+        Almal
+        JA ESTETIKA IARAT,120
+        AT.RW
+        004/008
+        KelDesa
+        Kecamatan
+        PEDALANGAN
+        BANYUMANIK
+        Agana
+        ISLAM
+        Kewarganegaraan: WNI
+        Pekerjaan
+        WIRASWASTA
+        iedakuHingga
+        02-08-2017
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "PEDALANGAN")
+        self.assertEqual(result.fields["kecamatan"].value, "BANYUMANIK")
+        self.assertEqual(result.fields["berlaku_hingga"].value, "02-08-2017")
+
+    def test_parse_ktp_prefers_partial_name_label_and_extends_address_fragment(self):
+        raw_text = """
+        PROVINSI BANTEN
+        KOTA TANGERANG
+        NIK
+        3173020211730006
+        Tempal/Tgl Lahir : JAKARTA, 02-11-1973
+        Nam
+        JAP JOBIE
+        Jenis kalamin
+        LAKI-LAKI
+        Alamat
+        PERUM PURI DEWATA INDAH BLOK
+        AT/RW
+        006/006
+        AM NO.6A
+        Kel/Desa
+        PORIS PLAWAD UTARA
+        Kecamatan : CIPONDOH
+        Kawarganegaraan: WN
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "JAP JOBIE")
+        self.assertEqual(result.fields["alamat"].value, "PERUM PURI DEWATA INDAH BLOK AM NO.6A")
+        self.assertEqual(result.fields["kewarganegaraan"].value, "WNI")
+
+    def test_parse_ktp_repairs_birth_year_from_nik_and_religion_typo(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA UTARA
+        NIK
+        3171010901570001
+        Name
+        HENRY ARIFIN MBA MAM
+        Tempat/Tgl Lahe
+        JAKARTA,09-01-1967
+        Alamal
+        MUARA KARANG BLOK C.B.S/24
+        KelDesa
+        PLUIT
+        Kecamatan
+        PENJARINGAN
+        Agama
+        KATHOLK
+        Berlaku Hingga
+        09-01-2017
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["tempat_tanggal_lahir"].value, "JAKARTA, 09-01-1957")
+        self.assertEqual(result.fields["agama"].value, "KATHOLIK")
+
+    def test_parse_ktp_recovers_name_from_short_label_and_seumur_hdup(self):
+        raw_text = """
+        PROVINSIDKIJAKARTA
+        JAKARTAUTARA
+        NIK
+        3172052508790003
+        am
+        LAU FUCHANG
+        opoTgLane
+        SURABAYA,25-08 1979
+        J.PANTAIKUTAVINO.7
+        Sats PerkaWan CERAI MATE:
+        egaan: WNI
+        SKARYAWANSWASTA
+        SEUMUR HDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "LAU FUCHANG")
+        self.assertEqual(result.fields["berlaku_hingga"].value, "SEUMUR HIDUP")
+
+    def test_parse_ktp_recovers_noasa_and_camnatan_labels(self):
+        raw_text = """
+        PROVINSI BANTEN
+        KOTA CILEGON
+        NIK
+        3672055905860005
+        Nama
+        MEILANNIH
+        Alamat
+        JL. JENDRAL ACHMAD YANI NO
+        83
+        TIT/RW
+        002/002
+        NOasa
+        SUKMAJAYA
+        camnatan
+        JOMBANG
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kelurahan_desa"].value, "SUKMAJAYA")
+        self.assertEqual(result.fields["kecamatan"].value, "JOMBANG")
+
+    def test_parse_ktp_recovers_taki_laki_gender_and_swast_job_typo(self):
+        raw_text = """
+        PROVINSLJAWA BARAT
+        KOTA BEKASI
+        NIK
+        3275081705690023
+        Nama
+        SYUKRI,SE.AK
+        Tempat/TglLahir
+        SIGLI,17-05-1969
+        Jenis kelamin
+        TAKI-LAKI
+        Alamal
+        PERUM BUMI JATIWARINGIN BLOKJ
+        NO. 13/6
+        RT/RW
+        :003/006
+        Kel/Desa
+        JATIWARINGIN
+        Kecamatan : PONDOKGEDE
+        Agama
+        :ISLAM
+        Status Perkawinan: KAWIN
+        Pekerjaan
+        KARYAWAN SWAST
+        Kewarganegaraan: WNI
+        Berlaku Hingga
+        SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["jenis_kelamin"].value, "LAKI-LAKI")
+        self.assertEqual(result.fields["pekerjaan"].value, "KARYAWAN SWASTA")
 
     def test_parse_ktp_repairs_transposed_region_and_expiry_values(self):
         raw_text = """
@@ -623,6 +2230,11 @@ class KtpParserTests(unittest.TestCase):
             ("BerlakuHingga:SEUMUR HIDUP", "SEUMUR HIDUP"),
             ("Berlaku Hing\nSEUMUR HIDUP", "SEUMUR HIDUP"),
             ("Barlaku Hingga\nSEUMUR HIDUP", "SEUMUR HIDUP"),
+            ("Beraku Hingga\n02-08-2017", "02-08-2017"),
+            ("Beriaku Hingga\n06-09-2018", "06-09-2018"),
+            ("Beriaky Hingga\nSEUMUR HIDUP", "SEUMUR HIDUP"),
+            ("BeriakuHingga\nSEUMUR HIDUP", "SEUMUR HIDUP"),
+            ("ak. Hingqa\nSEUMUR HIDUP", "SEUMUR HIDUP"),
             ("Serfaku Hingga\nSEUMUR HIDUP", "SEUMUR HIDUP"),
             ("Bertaku Hingga\nSEUMUR HIDUP", "SEUMUR HIDUP"),
             ("Berlaku: Hingga\n25-09-2017", "25-09-2017"),
@@ -639,6 +2251,20 @@ class KtpParserTests(unittest.TestCase):
                 result = parse_ktp_text(raw_text)
 
                 self.assertEqual(result.fields["berlaku_hingga"].value, expected)
+
+    def test_parse_ktp_falls_back_to_standalone_lifetime_expiry(self):
+        raw_text = """
+        NIK : 3175010101900001
+        Nama : BUDI SANTOSO
+        Tempat/Tgl Lahir : JAKARTA, 01-01-1990
+        Alamat : JL MERDEKA NO 10
+        20-05-2010
+        :SEUMUR HIDUP
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["berlaku_hingga"].value, "SEUMUR HIDUP")
 
     def test_ktp_layout_repairs_region_and_expiry_from_positions(self):
         result = parse_ktp_text(
@@ -1080,6 +2706,33 @@ class KtpParserTests(unittest.TestCase):
         result = parse_ktp_text(raw_text)
 
         self.assertEqual(result.fields["rt_rw"].value, "004/005")
+
+    def test_parse_ktp_extends_wrapped_name_before_birth_label(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA PUSAT
+        NIK
+        3171071511970008
+        Nama
+        GUNAWAN WILLYARVIN
+        PANGESTU
+        Tempat/TglLahir
+        JAKARTA, 15-11-1997
+        Jenis kelamin
+        LAKI-LAKI
+        Alamat
+        KH. MAS MANSYUR NO. 27
+        RT/RW
+        001/008
+        Kel/Desa
+        KEBON KACANG
+        Kecamatan
+        TANAH ABANG
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["nama"].value, "GUNAWAN WILLYARVIN PANGESTU")
 
     def test_parse_ktp_repairs_job_when_capture_reads_date(self):
         raw_text = """
@@ -1891,6 +3544,40 @@ class StnkParserTests(unittest.TestCase):
         self.assertEqual(result.fields["warna"].value, "HITAM")
         self.assertEqual(result.fields["bahan_bakar"].value, "LISTRIK")
 
+    def test_parse_stnk_repairs_side_by_side_pdf_official_noise(self):
+        raw_text = """
+        KEPOLISIAN NEGARA REPUBLIK INDONESIA
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NOMOR REGISTRASI
+        : B 9335 TYY
+        NAMA PEMILIK
+        : PT.PP PRESISI
+        ALIM PAGARRA, M
+        MAT
+        : JL TB SIMATUPANG NO.57 RT8/11
+        HINO
+        WAN A
+        :HIJAU
+        FM8JN1DEGJFM26OJDTCNHANBAKAR
+        :SOLAR
+        KENDARAAN KHUSUS
+        WARNA TNKB
+        :KUNING
+        DUMFER TR TRO
+        :2017
+        NOMORBANGKANIKVIN: MJEFM8JN1HJE18O31
+        ENOMOR MESIN
+        JO8EUFJ87329
+        BERLAKU SAMPAI:27-10-2022
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["merek"].value, "HINO")
+        self.assertEqual(result.fields["warna"].value, "HIJAU")
+        self.assertEqual(result.fields["tipe"].value, "FM8JN1DEGJFM26OJDTCNHANBAKAR")
+        self.assertEqual(result.fields["bahan_bakar"].value, "SOLAR")
+
     def test_parse_stnk_prefers_vehicle_brand_near_spec_labels_over_address_noise(self):
         raw_text = """
         SURAT TANDA NOMOR KENDARAAN BERMOTOR
@@ -2523,6 +4210,75 @@ class StnkParserTests(unittest.TestCase):
         result = parse_stnk_text(raw_text)
 
         self.assertEqual(result.fields["nama_pemilik"].value, "LAURA SANTOSO")
+
+    def test_parse_stnk_skips_noisy_owner_label_and_repairs_plate_suffix_digit(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NOMORREGISTRAS :B 5192 BA6
+        NAMA PEMILIK
+        A ALLAMAT
+        :SUWITO
+        STNK
+        MERK
+        YAMAHA
+        TAHLUN PEMBUCAN
+        2020
+        NOMR RANSKA NIKAIN:
+        MH3SEF510L3100981
+        NOMORMESN
+        E31WE0108877
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_polisi"].value, "B 5192 BAG")
+        self.assertEqual(result.fields["nama_pemilik"].value, "SUWITO")
+
+    def test_parse_stnk_prefers_company_owner_over_short_official_noise(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NOMOR REGSTRAS:
+        A-9204-S
+        NAMA PEMILIK
+        A-9204-S
+        COYANE
+        ALAMAT
+        100
+        NOMOR RANGKA NIKVIN:
+        MHMFN527HJKO13843
+        NOMORMESI
+        6D16-S37356
+        SURAT KETETAPAN PAJAK DAERAH
+        NAMA PEMILIK
+        PT KARYA WIRAJAYA
+        ALAMAT
+        JL KH ISHAK LINK SENEJA NO.45
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nama_pemilik"].value, "PT KARYA WIRAJAYA")
+
+    def test_parse_stnk_owner_allows_initial_dots_before_address_noise(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        NOMOR REGISTRASI:
+        BK 805 CPE
+        NAMA PEMILIK
+        KEMAS AHMAD YAMINLE M.S
+        A LAMAT
+        JIN SEI SILAU KOMP MEDAN BARU RESIDENCE NO I
+        WARNA
+        PUTIH METALIK
+        NOMOR RANGKA NIKVIN
+        JTNGF3DH4K8026227
+        NOMOR MESIN
+        2AR1234567
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nama_pemilik"].value, "KEMAS AHMAD YAMINLE M.S")
 
     def test_parse_stnk_prefers_company_owner_over_region_noise(self):
         raw_text = """

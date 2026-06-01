@@ -9,14 +9,27 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ocr_engine.cli_eval import _process_file
+from ocr_engine.cli_eval import _collect_paths, _create_provider, _process_file
 from ocr_engine.ocr.base import OcrResult, OcrToken
 
 
 class FakeProvider:
     def extract_text(self, image_path: str) -> OcrResult:
         return OcrResult(
-            raw_text="PROVINSI DKI JAKARTA\nNIK : 3175010101900001\nNama : BUDI\nAlamat : JL MERDEKA",
+            raw_text=(
+                "PROVINSI DKI JAKARTA\n"
+                "NIK : 3175010101900001\n"
+                "Nama : BUDI SANTOSO\n"
+                "Tempat/Tgl Lahir : JAKARTA, 01-01-1990\n"
+                "Jenis Kelamin : LAKI-LAKI\n"
+                "Alamat : JL MERDEKA\n"
+                "RT/RW : 001/002\n"
+                "Kel/Desa : GAMBIR\n"
+                "Kecamatan : GAMBIR\n"
+                "Pekerjaan : KARYAWAN SWASTA\n"
+                "Kewarganegaraan : WNI\n"
+                "Berlaku Hingga : SEUMUR HIDUP"
+            ),
             tokens=[
                 OcrToken("PROVINSI", 0.99),
                 OcrToken("DKI", 0.99),
@@ -170,6 +183,39 @@ def _write_textured_image(image_path: Path, size: tuple[int, int] = (900, 600)) 
 
 
 class CliEvalTests(unittest.TestCase):
+    def test_collect_paths_supports_recursive_seeded_sampling_and_skip_pdf(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            nested = root / "nested"
+            nested.mkdir()
+            for filename in ["a.jpg", "b.jpeg", "c.pdf", "notes.txt"]:
+                (root / filename).write_bytes(b"x")
+            (nested / "d.png").write_bytes(b"x")
+
+            first = _collect_paths(root, 2, recursive=True, include_pdf=False, random_seed=17)
+            second = _collect_paths(root, 2, recursive=True, include_pdf=False, random_seed=17)
+
+        self.assertEqual([path.name for path in first], [path.name for path in second])
+        self.assertEqual(len(first), 2)
+        self.assertTrue(all(path.suffix.lower() != ".pdf" for path in first))
+        self.assertTrue(all(path.name in {"a.jpg", "b.jpeg", "d.png"} for path in first))
+
+    def test_collect_paths_can_skip_single_pdf_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_path = Path(tmpdir) / "sample.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7")
+
+            paths = _collect_paths(pdf_path, 5, include_pdf=False)
+
+        self.assertEqual(paths, [])
+
+    def test_create_provider_normalizes_provider_name(self):
+        with unittest.mock.patch("ocr_engine.cli_eval.RapidOcrProvider", return_value="rapid") as rapid_provider:
+            provider = _create_provider(" Rapid ")
+
+        self.assertEqual(provider, "rapid")
+        rapid_provider.assert_called_once_with()
+
     def test_process_file_includes_quality_and_processing_time(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "ktp.jpg"
@@ -232,27 +278,26 @@ class CliEvalTests(unittest.TestCase):
     def test_stnk_fast_mode_uses_smaller_roi_image(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "stnk.jpg"
-            Image.new("RGB", (1800, 1200), "white").save(image_path)
+            _write_textured_image(image_path, size=(1800, 1200))
             provider = SizeRecordingProvider()
 
             record = _process_file(provider, image_path, "STNK", mode="fast")
 
-        self.assertEqual(max(provider.seen_sizes[0]), 720)
-        self.assertLess(provider.seen_sizes[0][1], 460)
+        self.assertEqual(provider.seen_sizes[0], (561, 422))
         self.assertEqual(record["ocr"]["processing_mode"], "fast")
         self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_fast_roi")
 
     def test_ktp_fast_mode_uses_smaller_prepared_image_than_accurate(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "ktp.jpg"
-            Image.new("RGB", (1800, 1200), "white").save(image_path)
+            _write_textured_image(image_path, size=(1800, 1200))
             fast_provider = SizeRecordingProvider()
             accurate_provider = SizeRecordingProvider()
 
             fast_record = _process_file(fast_provider, image_path, "KTP", mode="fast")
             accurate_record = _process_file(accurate_provider, image_path, "KTP", mode="accurate")
 
-        self.assertEqual(max(fast_provider.seen_sizes[0]), 720)
+        self.assertEqual(max(fast_provider.seen_sizes[0]), 496)
         self.assertEqual(max(accurate_provider.seen_sizes[0]), 1280)
         self.assertEqual(fast_record["ocr"]["processing_mode"], "fast")
         self.assertEqual(accurate_record["ocr"]["processing_mode"], "accurate")
@@ -287,7 +332,7 @@ class CliEvalTests(unittest.TestCase):
 
             record = _process_file(provider, image_path, "STNK", mode="fast")
 
-        self.assertEqual([max(size) for size in provider.seen_sizes], [720])
+        self.assertEqual(provider.seen_sizes, [(561, 422)])
         self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_fast_roi")
         self.assertEqual(record["ocr"]["preprocess"]["selected_max_side"], 720)
         self.assertEqual(record["ocr"]["preprocess"]["retry_count"], 0)
@@ -345,6 +390,22 @@ class CliEvalTests(unittest.TestCase):
         self.assertGreaterEqual(record["stnk_structure_score"], 0.7)
         self.assertEqual(record["stnk_usage_class"], "web_usable")
         self.assertEqual(record["stnk_usage_reasons"], [])
+
+    def test_process_file_demotes_internal_only_stnk_from_auto_publish(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "stnk.jpg"
+            _write_textured_image(image_path, size=(1800, 1200))
+
+            with unittest.mock.patch(
+                "ocr_engine.cli_eval.classify_stnk_record",
+                return_value=("internal_only", ["processing_time_over_20s"]),
+            ):
+                record = _process_file(CompleteStnkProvider(), image_path, "STNK")
+
+        self.assertTrue(record["needs_review"])
+        self.assertEqual(record["input_assessment"]["decision"], "needs_review")
+        self.assertFalse(record["input_assessment"]["can_auto_publish"])
+        self.assertIn("stnk_web_usage:processing_time_over_20s", record["input_assessment"]["reason_codes"])
 
 
 if __name__ == "__main__":

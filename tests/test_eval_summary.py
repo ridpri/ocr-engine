@@ -49,7 +49,11 @@ class EvalSummaryTests(unittest.TestCase):
                 "stnk_structure_score": 0.28,
                 "stnk_usage_class": "bad_input",
                 "stnk_usage_reasons": ["document_type_rejected"],
-                "input_assessment": {"decision": "rejected_input", "can_auto_publish": False},
+                "input_assessment": {
+                    "decision": "rejected_input",
+                    "can_auto_publish": False,
+                    "reason_codes": ["screen_or_desktop_capture"],
+                },
                 "warnings": ["missing_required:nama"],
                 "fields": {"nik": {"status": "ok"}, "nama": {"status": "missing"}},
                 "ocr": {
@@ -76,8 +80,12 @@ class EvalSummaryTests(unittest.TestCase):
         summary = summarize_records(records)
 
         self.assertEqual(summary["total"], 2)
+        self.assertEqual(summary["statuses"]["ok"], 2)
         self.assertEqual(summary["decisions"]["approved_for_auto"], 1)
         self.assertEqual(summary["decisions"]["rejected_input"], 1)
+        self.assertEqual(summary["auto_publish"]["true"], 1)
+        self.assertEqual(summary["auto_publish"]["false"], 1)
+        self.assertEqual(summary["reason_codes"]["screen_or_desktop_capture"], 1)
         self.assertEqual(summary["field_status"]["nama"]["missing"], 1)
         self.assertEqual(summary["warnings"]["missing_required:nama"], 1)
         self.assertEqual(summary["stnk_usage_classes"]["web_usable"], 1)
@@ -86,6 +94,8 @@ class EvalSummaryTests(unittest.TestCase):
         self.assertAlmostEqual(summary["stnk_structure_score"]["avg"], 0.6)
         self.assertEqual(summary["quality_flags"]["screen_or_desktop_capture"], 1)
         self.assertEqual(summary["processing_time_ms"]["avg"], 200)
+        self.assertEqual(summary["processing_time_ms"]["p50"], 200)
+        self.assertEqual(summary["processing_time_ms"]["p95"], 290)
         self.assertEqual(summary["ocr_tokens"]["avg"], 21)
         self.assertEqual(summary["ocr_retry_count"]["avg"], 0.5)
         self.assertEqual(summary["selected_max_side"]["max"], 1280)
@@ -93,6 +103,9 @@ class EvalSummaryTests(unittest.TestCase):
         self.assertEqual(summary["stage_timings_ms"]["pipeline_total"]["avg"], 155)
         self.assertEqual(summary["stage_timings_ms"]["ocr"]["avg"], 90)
         self.assertEqual(summary["stage_timings_ms"]["quality"]["max"], 30)
+        self.assertEqual(summary["slowest_records"][0]["file"], None)
+        self.assertEqual(summary["slowest_records"][0]["processing_time_ms"], 300)
+        self.assertEqual(summary["slowest_records"][0]["ocr_ms_total"], 120)
 
 
 if __name__ == "__main__":

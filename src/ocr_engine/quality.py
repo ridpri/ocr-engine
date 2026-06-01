@@ -15,28 +15,30 @@ SCREEN_CAPTURE_MARKERS = [
     ".JPG",
     ".JPEG",
     ".PNG",
+    " JPG",
+    " JPEG",
+    " PNG",
     "100%",
     "WINDOWS",
     "ZOOM",
 ]
 
 
-def analyze_image_quality(image_path: str | Path, ocr_result: OcrResult) -> dict:
-    image_path = Path(image_path)
-    with Image.open(image_path) as opened:
-        image = ImageOps.exif_transpose(opened).convert("RGB")
-        width, height = image.size
-        blur_score = _edge_score(image)
+def analyze_image_quality(
+    image_path: str | Path,
+    ocr_result: OcrResult,
+    preflight_quality: dict | None = None,
+) -> dict:
+    quality = preflight_quality or analyze_image_preflight(image_path)
+    width = quality["image"]["width"]
+    height = quality["image"]["height"]
+    blur_score = quality["metrics"]["blur_score"]
 
     token_count = len(ocr_result.tokens)
     megapixels = max((width * height) / 1_000_000, 0.01)
     text_density = token_count / megapixels
-    flags: list[str] = []
+    flags: list[str] = list(quality["flags"])
 
-    if min(width, height) < 500 or width * height < 250_000:
-        flags.append("document_too_small")
-    if blur_score < 3.5:
-        flags.append("blur_detected")
     if token_count < 6:
         flags.append("low_text_density")
     if _looks_like_screen_or_desktop_capture(ocr_result.raw_text):
@@ -45,8 +47,37 @@ def analyze_image_quality(image_path: str | Path, ocr_result: OcrResult) -> dict
     metrics = {
         "ocr_token_count": token_count,
         "text_density": round(text_density, 2),
+        "blur_score": blur_score,
+        "overall_score": _overall_quality_score(flags),
+        "pre_ocr": False,
+    }
+    return {
+        "image": quality["image"],
+        "flags": flags,
+        "metrics": metrics,
+    }
+
+
+def analyze_image_preflight(image_path: str | Path) -> dict:
+    image_path = Path(image_path)
+    with Image.open(image_path) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+        width, height = image.size
+        blur_score = _edge_score(image)
+
+    flags: list[str] = []
+
+    if min(width, height) < 350 or width * height < 150_000:
+        flags.append("document_too_small")
+    if blur_score < 3.5:
+        flags.append("blur_detected")
+
+    metrics = {
+        "ocr_token_count": 0,
+        "text_density": 0.0,
         "blur_score": round(blur_score, 2),
         "overall_score": _overall_quality_score(flags),
+        "pre_ocr": True,
     }
     return {
         "image": {"width": width, "height": height},

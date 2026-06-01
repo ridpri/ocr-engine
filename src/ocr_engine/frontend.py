@@ -539,17 +539,6 @@ def frontend_html() -> str:
 
           <label class="field-label" for="vps-api-key">VPS API Key</label>
           <input id="vps-api-key" name="vps_api_key" type="password" placeholder="Isi kalau memilih engine VPS" autocomplete="off" />
-          <div class="status">Testing only. Untuk production, API key harus disimpan di backend/proxy, bukan di browser.</div>
-
-          <label class="check-row" for="compare-openclaw">
-            <input id="compare-openclaw" name="compare_openclaw" type="checkbox" />
-            <span>Bandingkan dengan VPS OpenClaw AI</span>
-          </label>
-          <label class="check-row" for="quality-gate">
-            <input id="quality-gate" name="quality_gate" type="checkbox" />
-            <span>Cek kualitas sebelum OCR</span>
-          </label>
-          <div id="quality-gate-status" class="quality-hint">Quality gate opsional. Cocok untuk simulasi frontend pembelian asuransi.</div>
 
           <div class="actions">
             <button id="submit-button" type="submit">Jalankan OCR</button>
@@ -678,33 +667,6 @@ def frontend_html() -> str:
       </section>
     </div>
 
-    <section class="api-docs">
-      <h2>Cara Integrasi API</h2>
-      <p>Gunakan endpoint VPS/VPN OCR sebagai API multipart upload.</p>
-      <div class="api-warning">
-        Integrasi production cukup dari jaringan/VPN yang diizinkan dan menggunakan header API key dari backend/internal system.
-      </div>
-      <div class="api-grid">
-        <div class="api-tile"><strong>KTP lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/ktp</code></div>
-        <div class="api-tile"><strong>STNK lokal VPS</strong><br><code>POST http://203.194.113.161/ocr/stnk</code></div>
-      </div>
-      <ul>
-        <li>Method: <code>POST</code></li>
-        <li>Body: <code>multipart/form-data</code></li>
-        <li>Field file: <code>file</code></li>
-        <li>Header auth: <code>X-API-Key: &lt;API_KEY&gt;</code></li>
-        <li>Supported input: JPG, PNG, BMP, WEBP, PDF halaman pertama</li>
-      </ul>
-
-      <h3>Contoh cURL untuk IT</h3>
-      <pre><code>curl -X POST "http://203.194.113.161/ocr/ktp" \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -F "file=@KTP.jpg"
-
-curl -X POST "http://203.194.113.161/ocr/stnk" \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -F "file=@STNK.pdf"</code></pre>
-    </section>
   </main>
 
   <script>
@@ -746,6 +708,17 @@ curl -X POST "http://203.194.113.161/ocr/stnk" \
     let lastDocumentType = "KTP";
     let lastEngineType = "local";
     let lastVpsApiKey = "";
+    const FIELD_ORDER = {
+      KTP: [
+        "provinsi", "kabupaten_kota", "nik", "nama", "tempat_tanggal_lahir", "jenis_kelamin",
+        "alamat", "rt_rw", "kelurahan_desa", "kecamatan", "kode_pos", "agama",
+        "status_perkawinan", "pekerjaan", "kewarganegaraan", "berlaku_hingga"
+      ],
+      STNK: [
+        "nomor_polisi", "nama_pemilik", "nomor_rangka", "nomor_mesin", "merek", "tipe",
+        "jenis", "tahun_pembuatan", "warna", "bahan_bakar", "berlaku_sampai", "alamat"
+      ]
+    };
 
     configureEngineOptions();
     async function checkHealth() {
@@ -813,7 +786,7 @@ curl -X POST "http://203.194.113.161/ocr/stnk" \
       aiComparisonSection.style.display = "none";
       setResultTab("endpoint", false);
       configureEngineOptions();
-      updateQualityGateStatus({ status: "info", message: "Quality gate opsional. Cocok untuk simulasi frontend pembelian asuransi." });
+      updateQualityGateStatus({ status: "info", message: "" });
     });
 
     form.addEventListener("submit", async (event) => {
@@ -834,7 +807,7 @@ curl -X POST "http://203.194.113.161/ocr/stnk" \
       let comparisonPromise = null;
 
       try {
-        if (qualityGate.checked) {
+        if (qualityGate?.checked) {
           selectedFileQuality = selectedFileQuality || await evaluateClientQuality(file);
           const gate = runClientQualityGate(selectedFileQuality, documentType);
           updateQualityGateStatus(gate);
@@ -848,7 +821,7 @@ curl -X POST "http://203.194.113.161/ocr/stnk" \
         }
 
         const endpoint = endpointFor(documentType, engineType);
-        const shouldCompare = compareOpenclaw.checked;
+        const shouldCompare = Boolean(compareOpenclaw?.checked);
         if ((engineType.startsWith("vps-") || shouldCompare) && !vpsApiKey) {
           throw new Error("Isi VPS API Key dulu untuk engine VPS atau pembanding OpenClaw.");
         }
@@ -899,11 +872,11 @@ curl -X POST "http://203.194.113.161/ocr/stnk" \
     function endpointFor(documentType, engineType) {
       if (engineType === "vps-local") {
         if (documentType === "KTP") return "/ocr/vps/ktp?mode=fast";
-        if (documentType === "STNK") return "/ocr/vps/stnk";
+        if (documentType === "STNK") return "/ocr/vps/stnk?mode=fast";
         return `/ocr/vps?document_type=${encodeURIComponent(documentType)}&mode=fast`;
       }
       if (documentType === "KTP") return "/ocr/ktp?mode=fast";
-      if (documentType === "STNK") return "/ocr/purchase/stnk";
+      if (documentType === "STNK") return "/ocr/stnk?mode=fast";
       return `/ocr?document_type=${encodeURIComponent(documentType)}&mode=fast`;
     }
 
@@ -1004,8 +977,9 @@ curl -X POST "http://203.194.113.161/ocr/stnk" \
     }
 
     function updateQualityGateStatus(gate) {
+      if (!qualityGateStatus) return;
       qualityGateStatus.className = `quality-hint ${gate.status === "bad" ? "bad" : gate.status === "warn" ? "warn" : ""}`.trim();
-      qualityGateStatus.textContent = gate.message || "Quality gate opsional. Cocok untuk simulasi frontend pembelian asuransi.";
+      qualityGateStatus.textContent = gate.message || "";
     }
 
     function clearRenderedResult(message) {
@@ -1082,7 +1056,7 @@ curl -X POST "http://203.194.113.161/ocr/stnk" \
         row.innerHTML = '<td colspan="4" class="value">Hasil awal belum berisi field OCR. OCR yang sama tetap berjalan di background.</td>';
         fieldsBody.appendChild(row);
       } else {
-        Object.entries(data.fields || {}).forEach(([key, field]) => {
+        orderedFieldEntries(data).forEach(([key, field]) => {
           const row = document.createElement("tr");
           row.innerHTML = `
             <td>${escapeHtml(key)}</td>
@@ -1098,6 +1072,23 @@ curl -X POST "http://203.194.113.161/ocr/stnk" \
       rawJson.textContent = JSON.stringify(data, null, 2);
       renderItOutput(data.ti_compatible);
       renderEnrichmentPending(data.enrichment || data.background_full_ocr);
+    }
+
+    function orderedFieldEntries(data) {
+      const fields = data.fields || {};
+      const preferred = FIELD_ORDER[data.document_type] || [];
+      const seen = new Set();
+      const entries = [];
+      preferred.forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(fields, key)) {
+          seen.add(key);
+          entries.push([key, fields[key]]);
+        }
+      });
+      Object.entries(fields).forEach(([key, field]) => {
+        if (!seen.has(key)) entries.push([key, field]);
+      });
+      return entries;
     }
 
     function renderItOutput(payload) {

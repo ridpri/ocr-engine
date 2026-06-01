@@ -36,6 +36,9 @@ STNK_VALUE_NOISE = {
     "KB",
     "LAMA",
     "MODEL",
+    "KOHIR",
+    "NO KOHIR",
+    "NO. KOHIR",
     "PEMILIK",
     "PEMILIN",
     "REGISTRASI",
@@ -45,6 +48,8 @@ STNK_VALUE_NOISE = {
 }
 PERSON_NOISE_WORDS = {
     "ALAMAT",
+    "ALLAMAT",
+    "LAMAT",
     "BAHAN",
     "BENSIN",
     "BBN",
@@ -68,6 +73,7 @@ PERSON_NOISE_WORDS = {
     "KEL",
     "KEC",
     "KEPALA",
+    "KOHIR",
     "KODE",
     "LIMA",
     "MAZDA",
@@ -490,6 +496,10 @@ def _apply_official_stnk_section_overrides(raw_text: str, fields: dict[str, Fiel
     if owner and _should_apply_official_override(fields["nama_pemilik"]):
         fields["nama_pemilik"] = make_ok(owner, confidence=0.9, raw="official_section:nama_pemilik")
 
+    company_owner = _fallback_company_owner(normalized_lines(raw_text))
+    if company_owner and not _looks_like_company_name(fields["nama_pemilik"].value or ""):
+        fields["nama_pemilik"] = make_ok(company_owner, confidence=0.78, raw="fallback:company_owner_scan")
+
     simple_fields = {
         "merek": r"\bMER[EK]\w*\b",
         "jenis": r"\bJENIS\b",
@@ -581,7 +591,7 @@ def _is_broken_official_capture(value: str) -> bool:
 
 def _section_vehicle_brand(lines: list[str]) -> str | None:
     for index, line in enumerate(lines):
-        if not re.search(r"\b(?:WARNA|TYPE|TIPE|JENIS|MODEL)\b", line, flags=re.IGNORECASE):
+        if not re.search(r"\b(?:WARNA|TYPE|TIPE|JENIS|MODEL)\b|\bW[A-Z]?\s*N\s*A\b", line, flags=re.IGNORECASE):
             continue
         for candidate in reversed(_window(lines, index - 6, index)):
             if _is_vehicle_brand_candidate(candidate):
@@ -608,7 +618,12 @@ def _label_line_index(lines: list[str], pattern: str) -> int | None:
 
 def _is_vehicle_brand_candidate(value: str) -> bool:
     candidate = collapse_spaces(value)
-    return bool(re.fullmatch(r"[A-Z0-9]{2,12}", candidate)) and not _is_noise_value(candidate)
+    return (
+        bool(re.fullmatch(r"[A-Z0-9]{2,12}", candidate))
+        and not _is_noise_value(candidate)
+        and not _extract_fuel_value_from_line(candidate)
+        and not _normalize_vehicle_color(candidate)
+    )
 
 
 def _section_fuel_value(lines: list[str]) -> str | None:
@@ -650,6 +665,12 @@ def _section_type_value(lines: list[str]) -> str | None:
             cleaned = _clean_type_candidate(candidate)
             if _is_strong_type_value(cleaned):
                 return cleaned
+    for line in lines:
+        if not re.search(r"(?:BAHAN\s*BAKAR|BAHANBAKAR|HAN\s*BAKAR|HANBAKAR)", line, flags=re.IGNORECASE):
+            continue
+        cleaned = collapse_spaces(line.strip(" :.-"))
+        if _is_strong_type_value(cleaned):
+            return cleaned
     return None
 
 
@@ -735,7 +756,7 @@ def _is_type_noise_value(value: str) -> bool:
 
 def _section_color_value(lines: list[str]) -> str | None:
     for index, line in enumerate(lines):
-        if not re.search(r"\bWARNA\w*\b", line, flags=re.IGNORECASE):
+        if not re.search(r"\bWARNA\w*\b|\bW[A-Z]?\s*N\s*A\b", line, flags=re.IGNORECASE):
             continue
         if re.search(r"\bTNKB\b", line, flags=re.IGNORECASE):
             continue
@@ -1066,6 +1087,18 @@ def _fallback_owner(lines: list[str], plate: str | None) -> str | None:
     return None
 
 
+def _fallback_company_owner(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines):
+        if not _matches_owner_label(line):
+            continue
+        for candidate in _window(lines, index + 1, index + 10):
+            if _is_owner_scan_stop_label(candidate) and not _looks_like_company_name(candidate):
+                continue
+            if _looks_like_company_name(candidate):
+                return _normalize_owner_candidate(candidate)
+    return None
+
+
 def _fallback_manufacture_year(lines: list[str]) -> str | None:
     for line in lines:
         if _looks_like_noisy_manufacture_year_line(line):
@@ -1307,7 +1340,7 @@ def _window(lines: list[str], start: int, end: int) -> list[str]:
 
 def _looks_like_person_name(value: str) -> bool:
     cleaned = collapse_spaces(value.upper().replace(",", " "))
-    if "XXX" in cleaned or "." in cleaned:
+    if "XXX" in cleaned:
         return False
     if _looks_like_amount(cleaned) or any(char.isdigit() for char in cleaned):
         return False
@@ -1329,7 +1362,7 @@ def _looks_like_owner_name_after_label(value: str) -> bool:
     if _looks_like_owner_name(value):
         return True
     cleaned = collapse_spaces(value.upper().replace(",", " "))
-    if "XXX" in cleaned or "." in cleaned:
+    if "XXX" in cleaned:
         return False
     if _looks_like_amount(cleaned) or any(char.isdigit() for char in cleaned):
         return False
@@ -1377,7 +1410,7 @@ def _normalize_stnk_plate(value: str | None) -> str | None:
     if normalized or not value:
         return normalized
     compact = re.sub(r"[\s.\-]", "", value.upper())
-    suffix_translation = str.maketrans({"0": "O", "1": "I", "3": "J", "5": "S", "8": "B"})
+    suffix_translation = str.maketrans({"0": "O", "1": "I", "3": "J", "5": "S", "6": "G", "8": "B"})
     match = re.fullmatch(r"([A-Z]{1,2})(\d{1,4})([A-Z0-9]{1,3})", compact)
     if match:
         suffix = match.group(3).translate(suffix_translation)
@@ -1394,7 +1427,7 @@ def _is_current_plate_label(line: str) -> bool:
         return False
     return bool(
         re.search(r"\b(?:NOMOR|NO)\s*\.?\s*POLIS\w*\b", line, flags=re.IGNORECASE)
-        or re.search(r"\b(?:NRKB|NOMOR\s+REGISTRAS\w*)\b", line, flags=re.IGNORECASE)
+        or re.search(r"\b(?:NRKB|NOMOR\s*REGISTRAS\w*)\b", line, flags=re.IGNORECASE)
     )
 
 

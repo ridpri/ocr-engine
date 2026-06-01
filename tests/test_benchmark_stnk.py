@@ -77,7 +77,7 @@ class BenchmarkStnkTests(unittest.TestCase):
 
             with patch(
                 "ocr_engine.cli_eval._process_file",
-                side_effect=lambda provider, path, document_type, mode="accurate": _fake_stnk_record(
+                side_effect=lambda provider, path, document_type, mode="accurate", run_nik_fallback=True: _fake_stnk_record(
                     path.name,
                     mode=mode,
                 ),
@@ -105,7 +105,7 @@ class BenchmarkStnkTests(unittest.TestCase):
 
             calls: list[tuple[str, str, str]] = []
 
-            def fake_process_file(provider, path, document_type, mode="accurate"):
+            def fake_process_file(provider, path, document_type, mode="accurate", run_nik_fallback=True):
                 calls.append((path.name, document_type, mode))
                 return _fake_stnk_record(path.name, mode=mode)
 
@@ -151,7 +151,7 @@ class BenchmarkStnkTests(unittest.TestCase):
 
             calls: list[str] = []
 
-            def fake_process_file(provider, path, document_type, mode="accurate"):
+            def fake_process_file(provider, path, document_type, mode="accurate", run_nik_fallback=True):
                 calls.append(path.name)
                 return _fake_stnk_record(path.name, mode=mode)
 
@@ -181,7 +181,7 @@ class BenchmarkStnkTests(unittest.TestCase):
 
             calls: list[tuple[str, str, str]] = []
 
-            def fake_process_file(provider, path, document_type, mode="accurate"):
+            def fake_process_file(provider, path, document_type, mode="accurate", run_nik_fallback=True):
                 calls.append((path.name, document_type, mode))
                 return _fake_stnk_record(path.name, mode=mode)
 

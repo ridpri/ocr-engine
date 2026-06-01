@@ -16,6 +16,7 @@ from ocr_engine.schemas import FieldResult
 DEFAULT_DB_DIR = Path(__file__).resolve().parents[3] / "DB Kode Wilayah"
 DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / "data" / "postal_code_index.tsv"
 XLSX_NS = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+OCR_ALPHA_DIGIT_MAP = str.maketrans({"0": "O", "1": "I", "5": "S", "8": "B"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,15 +255,26 @@ class PostalCodeIndex:
     def _candidate_entries(self, query: dict[str, str]) -> list[_PostalEntry]:
         if not query["kelurahan"]:
             return self.entries
-        exact = self._entries_by_locality.get(query["kelurahan"])
-        if exact:
-            return exact
-        return [
-            entry
-            for locality, entries in self._entries_by_locality.items()
-            if query["kelurahan"] in locality or locality in query["kelurahan"]
-            for entry in entries
-        ]
+        compact_query = _compact_text(query["kelurahan"])
+        candidates: list[_PostalEntry] = []
+        seen: set[tuple[str, str, str]] = set()
+        for locality, entries in self._entries_by_locality.items():
+            if not locality:
+                continue
+            if not (
+                query["kelurahan"] == locality
+                or query["kelurahan"] in locality
+                or locality in query["kelurahan"]
+                or compact_query == _compact_text(locality)
+            ):
+                continue
+            for entry in entries:
+                key = (entry.kode_pos, entry.address, entry.locality)
+                if key in seen:
+                    continue
+                seen.add(key)
+                candidates.append(entry)
+        return candidates
 
 
 def lookup_postal_code(fields: dict[str, FieldResult]) -> PostalCodeMatch | None:
@@ -308,13 +320,13 @@ def _score_entry(entry: _PostalEntry, query: dict[str, str]) -> tuple[float, lis
     score = 0.0
     evidence: list[str] = []
     if query["provinsi"]:
-        if query["provinsi"] != entry.normalized_province:
+        if not _same_normalized_text(query["provinsi"], entry.normalized_province):
             return 0.0, []
         score += 2
         evidence.append(f"provinsi:{entry.province_name}")
 
     if query["kota"]:
-        if query["kota"] == entry.normalized_city:
+        if _same_normalized_text(query["kota"], entry.normalized_city):
             score += 3
         elif query["kota"] in entry.normalized_city or entry.normalized_city in query["kota"]:
             score += 2
@@ -323,9 +335,11 @@ def _score_entry(entry: _PostalEntry, query: dict[str, str]) -> tuple[float, lis
         evidence.append(f"kabupaten_kota:{entry.city_name}")
 
     if query["kelurahan"]:
-        if query["kelurahan"] == entry.normalized_locality:
+        if _same_normalized_text(query["kelurahan"], entry.normalized_locality):
             score += 6
         elif _contains_phrase(entry.normalized_locality, query["kelurahan"]):
+            score += 4
+        elif entry.normalized_locality and _contains_phrase(query["kelurahan"], entry.normalized_locality):
             score += 4
         elif _contains_phrase(entry.normalized_address, query["kelurahan"]):
             score += 3
@@ -351,7 +365,64 @@ def _score_entry(entry: _PostalEntry, query: dict[str, str]) -> tuple[float, lis
 def _contains_phrase(haystack: str, needle: str) -> bool:
     if not haystack or not needle:
         return False
-    return bool(re.search(rf"(^| ){re.escape(needle)}($| )", haystack))
+    if re.search(rf"(^| ){re.escape(needle)}($| )", haystack):
+        return True
+    compact_haystack = _compact_text(haystack)
+    compact_needle = _compact_text(needle)
+    return bool(compact_haystack and compact_needle and compact_needle in compact_haystack)
+
+
+def _same_normalized_text(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if not left or not right:
+        return False
+    left_compact = _compact_text(left)
+    right_compact = _compact_text(right)
+    if left_compact == right_compact:
+        return True
+    left_ocr = _ocr_compact_text(left)
+    right_ocr = _ocr_compact_text(right)
+    if left_ocr == right_ocr:
+        return True
+    shorter, longer = sorted((left_ocr, right_ocr), key=len)
+    if len(shorter) >= 5 and longer.startswith(shorter) and len(longer) - len(shorter) <= 1:
+        return True
+    return _edit_distance_at_most(left_ocr, right_ocr, max_distance=1)
+
+
+def _compact_text(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", value or "")
+
+
+def _ocr_compact_text(value: str) -> str:
+    return _compact_text(value).translate(OCR_ALPHA_DIGIT_MAP)
+
+
+def _edit_distance_at_most(left: str, right: str, max_distance: int) -> bool:
+    if not left or not right:
+        return False
+    if abs(len(left) - len(right)) > max_distance:
+        return False
+    if left == right:
+        return True
+    previous = list(range(len(right) + 1))
+    for left_index, left_char in enumerate(left, start=1):
+        current = [left_index]
+        row_min = current[0]
+        for right_index, right_char in enumerate(right, start=1):
+            cost = 0 if left_char == right_char else 1
+            current_value = min(
+                previous[right_index] + 1,
+                current[right_index - 1] + 1,
+                previous[right_index - 1] + cost,
+            )
+            current.append(current_value)
+            row_min = min(row_min, current_value)
+        if row_min > max_distance:
+            return False
+        previous = current
+    return previous[-1] <= max_distance
 
 
 def _shared_address_terms(query_address: str, entry_address: str) -> list[str]:
@@ -449,6 +520,8 @@ def _clean_numeric_id(value: str | None) -> str:
 def _normalize_text(value: str | None) -> str:
     ascii_text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
     ascii_text = ascii_text.upper()
+    ascii_text = re.sub(r"\bDAERAH\s+ISTIMEWA\s+YOGYAKARTA\b", "DI YOGYAKARTA", ascii_text)
+    ascii_text = re.sub(r"\bKEPULAUAN\s+RIAU\b", "KEP RIAU", ascii_text)
     ascii_text = re.sub(r"\b(?:KABUPATEN|KAB|KOTA|KELURAHAN|KEL|DESA|KECAMATAN|KEC)\b", " ", ascii_text)
     ascii_text = re.sub(r"[^A-Z0-9]+", " ", ascii_text)
     return re.sub(r"\s+", " ", ascii_text).strip()
