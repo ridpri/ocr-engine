@@ -23,9 +23,16 @@ def frontend_html() -> str:
       --bad: #b42318;
     }
     * { box-sizing: border-box; }
+    html {
+      min-height: 100%;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
     body {
       margin: 0;
       min-height: 100vh;
+      overflow-x: hidden;
+      overflow-y: auto;
       background: var(--bg);
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
