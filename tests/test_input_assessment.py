@@ -196,6 +196,17 @@ class InputAssessmentTests(unittest.TestCase):
         self.assertFalse(assessment["can_auto_publish"])
         self.assertIn("ktp_suspicious_field:tempat_tanggal_lahir", assessment["reason_codes"])
 
+    def test_ktp_invalid_kode_pos_reason_code_needs_review(self):
+        parsed = _ktp_result()
+        parsed.fields["kode_pos"] = FieldResult("99999", 0.88, "invalid", evidence=["db_kode_wilayah:mismatch"])
+        parsed.warnings.append("invalid:kode_pos")
+
+        assessment = build_input_assessment("PROVINSI DKI JAKARTA\nNIK", parsed, "KTP", "KTP")
+
+        self.assertEqual(assessment["decision"], "needs_review")
+        self.assertFalse(assessment["can_auto_publish"])
+        self.assertIn("invalid:kode_pos", assessment["reason_codes"])
+
     def test_ktp_nik_birth_date_mismatch_needs_review(self):
         raw_text = """
         PROVINSI DKI JAKARTA

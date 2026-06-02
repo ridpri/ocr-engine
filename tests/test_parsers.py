@@ -10,6 +10,7 @@ from ocr_engine.parsers.ktp import parse_ktp_text
 from ocr_engine.parsers.ktp_layout import apply_ktp_layout_hints
 from ocr_engine.postal_code import PostalCodeIndex, PostalCodeMatch
 from ocr_engine.ocr.base import OcrToken
+from ocr_engine.schemas import FieldResult
 from ocr_engine.parsers.stnk import match_stnk_label, parse_stnk_text, stnk_structure_score
 from ocr_engine.validators import mask_sensitive_text, normalize_nik, validate_plate_number
 
@@ -628,6 +629,121 @@ class KtpParserTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.kode_pos, "17510")
 
+    def test_postal_code_index_does_not_guess_from_address_only(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12110",
+                    "address": "Senayan, Kebayoran Baru, Jakarta Selatan, DKI Jakarta, JL Merdeka Raya Barat Indah",
+                    "locality": "Senayan",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Kebayoran Baru",
+                }
+            ]
+        )
+        fields = {
+            "provinsi": FieldResult("DKI JAKARTA", 0.92, "ok"),
+            "kabupaten_kota": FieldResult("JAKARTA SELATAN", 0.92, "ok"),
+            "alamat": FieldResult("JL MERDEKA RAYA BARAT INDAH", 0.86, "ok"),
+        }
+
+        self.assertIsNone(index.lookup(fields))
+
+    def test_postal_code_index_uses_district_name_to_choose_matching_kecamatan(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "40111",
+                    "address": "Suka Maju, Kota Bandung, Jawa Barat",
+                    "locality": "Suka Maju",
+                    "sifat_pos": "kel.",
+                    "city_name": "Bandung",
+                    "province_name": "Jawa Barat",
+                    "district_name": "Kecamatan Salah",
+                },
+                {
+                    "kode_pos": "40222",
+                    "address": "Suka Maju, Kota Bandung, Jawa Barat",
+                    "locality": "Suka Maju",
+                    "sifat_pos": "kel.",
+                    "city_name": "Bandung",
+                    "province_name": "Jawa Barat",
+                    "district_name": "Kecamatan Benar",
+                },
+            ]
+        )
+        fields = {
+            "provinsi": FieldResult("JAWA BARAT", 0.92, "ok"),
+            "kabupaten_kota": FieldResult("BANDUNG", 0.92, "ok"),
+            "kelurahan_desa": FieldResult("SUKA MAJU", 0.86, "ok"),
+            "kecamatan": FieldResult("KECAMATAN BENAR", 0.86, "ok"),
+        }
+
+        match = index.lookup(fields)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kode_pos, "40222")
+
+    def test_postal_code_index_lookup_by_kode_pos_only(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12430",
+                    "address": "Cilandak Barat, Cilandak, Jakarta Selatan, DKI Jakarta 12430",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Cilandak",
+                }
+            ]
+        )
+        fields = {"kode_pos": FieldResult("12430", 0.88, "ok")}
+
+        match = index.lookup(fields)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kode_pos, "12430")
+        self.assertEqual(match.match_status, "exact_match")
+
+    def test_postal_code_index_lookup_with_kode_pos_prefers_code_index(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12430",
+                    "address": "Cilandak Barat, Cilandak, Jakarta Selatan, DKI Jakarta 12430",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Cilandak",
+                },
+                {
+                    "kode_pos": "12431",
+                    "address": "Cilandak Barat, Pasar Minggu, Jakarta Selatan, DKI Jakarta 12431",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Pasar Minggu",
+                },
+            ]
+        )
+        fields = {
+            "kode_pos": FieldResult("12431", 0.88, "ok"),
+            "provinsi": FieldResult("DKI JAKARTA", 0.92, "ok"),
+            "kabupaten_kota": FieldResult("JAKARTA SELATAN", 0.92, "ok"),
+            "kelurahan_desa": FieldResult("CILANDAK BARAT", 0.86, "ok"),
+            "kecamatan": FieldResult("PASAR MINGGU", 0.86, "ok"),
+        }
+
+        match = index.lookup(fields)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.kode_pos, "12431")
+
     def test_postal_code_index_matches_joined_locality_and_province_spacing(self):
         index = PostalCodeIndex.from_records(
             [
@@ -828,6 +944,152 @@ class KtpParserTests(unittest.TestCase):
         self.assertEqual(result.fields["kode_pos"].value, "12430")
         self.assertEqual(result.fields["provinsi"].value, "DKI JAKARTA")
         self.assertEqual(result.fields["kabupaten_kota"].value, "JAKARTA SELATAN")
+
+    def test_parse_ktp_keeps_and_validates_provided_kode_pos(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12430",
+                    "address": "Cilandak Barat, Cilandak, Jakarta Selatan, DKI Jakarta 12430",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Cilandak",
+                }
+            ]
+        )
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA SELATAN
+        NIK 3174065504690001
+        Nama DEWI PUJIASTUTI
+        Alamat JL CILANDAK V UJUNG /KAV.2
+        Kel/Desa CILANDAK BARAT
+        Kecamatan CILANDAK
+        Kode Pos 12430
+        """
+
+        with patch("ocr_engine.parsers.ktp.lookup_postal_code", side_effect=lambda fields: index.lookup(fields)):
+            result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kode_pos"].value, "12430")
+        self.assertEqual(result.fields["kode_pos"].status, "ok")
+        self.assertNotIn("invalid:kode_pos", result.warnings)
+
+    def test_parse_ktp_marks_kode_pos_invalid_when_mismatched_with_db(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12430",
+                    "address": "Cilandak Barat, Cilandak, Jakarta Selatan, DKI Jakarta 12430",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Cilandak",
+                }
+            ]
+        )
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA SELATAN
+        NIK 3174065504690001
+        Nama DEWI PUJIASTUTI
+        Alamat JL CILANDAK V UJUNG /KAV.2
+        Kel/Desa CILANDAK BARAT
+        Kecamatan CILANDAK
+        Kode Pos 99999
+        """
+
+        with patch("ocr_engine.parsers.ktp.lookup_postal_code", side_effect=lambda fields: index.lookup(fields)):
+            result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kode_pos"].value, "99999")
+        self.assertEqual(result.fields["kode_pos"].status, "invalid")
+        self.assertIn("invalid:kode_pos", result.warnings)
+        self.assertTrue(result.needs_review)
+
+    def test_parse_ktp_warns_when_kode_pos_cannot_be_confirmed_against_region(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12430",
+                    "address": "Cilandak Barat, Cilandak, Jakarta Selatan, DKI Jakarta 12430",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Cilandak",
+                }
+            ]
+        )
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA SELATAN
+        NIK 3174065504690001
+        Nama DEWI PUJIASTUTI
+        Alamat JL CILANDAK V UJUNG /KAV.2
+        Kode Pos 99999
+        """
+
+        with patch("ocr_engine.parsers.ktp.lookup_postal_code", side_effect=lambda fields: index.lookup(fields)):
+            result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kode_pos"].value, "99999")
+        self.assertEqual(result.fields["kode_pos"].status, "ok")
+        self.assertIn("unverified:kode_pos", result.warnings)
+        self.assertTrue(result.needs_review)
+
+    def test_parse_ktp_marks_malformed_kode_pos_invalid(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA SELATAN
+        NIK 3174065504690001
+        Nama DEWI PUJIASTUTI
+        Alamat JL CILANDAK V UJUNG /KAV.2
+        Kel/Desa CILANDAK BARAT
+        Kecamatan CILANDAK
+        Kode Pos 12X
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kode_pos"].value, "12X")
+        self.assertEqual(result.fields["kode_pos"].status, "invalid")
+        self.assertIn("invalid:kode_pos", result.warnings)
+
+    def test_parse_ktp_normalizes_ocr_kode_pos_noise(self):
+        index = PostalCodeIndex.from_records(
+            [
+                {
+                    "kode_pos": "12430",
+                    "address": "Cilandak Barat, Cilandak, Jakarta Selatan, DKI Jakarta 12430",
+                    "locality": "Cilandak Barat",
+                    "sifat_pos": "kel.",
+                    "city_name": "Jakarta Selatan",
+                    "province_name": "DKI Jakarta",
+                    "district_name": "Cilandak",
+                }
+            ]
+        )
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA SELATAN
+        NIK 3174065504690001
+        Nama DEWI PUJIASTUTI
+        Alamat JL CILANDAK V UJUNG /KAV.2
+        Kel/Desa CILANDAK BARAT
+        Kecamatan CILANDAK
+        Kode Pos 1243O
+        """
+
+        with patch("ocr_engine.parsers.ktp.lookup_postal_code", side_effect=lambda fields: index.lookup(fields)):
+            result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["kode_pos"].value, "12430")
+        self.assertEqual(result.fields["kode_pos"].status, "ok")
+        self.assertIn("normalize:kode_pos", result.fields["kode_pos"].evidence)
 
     def test_parse_ktp_normalizes_joined_jalan_prefix_in_address(self):
         raw_text = """

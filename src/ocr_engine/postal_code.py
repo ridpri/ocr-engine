@@ -59,16 +59,27 @@ class _PostalEntry:
     normalized_locality: str
     normalized_city: str
     normalized_province: str
+    normalized_district: str
 
 
 class PostalCodeIndex:
     def __init__(self, entries: list[_PostalEntry]):
         self.entries = entries
+        self._entries_by_postal_code: dict[str, list[_PostalEntry]] = {}
         self._entries_by_locality: dict[str, list[_PostalEntry]] = {}
+        self._entries_by_compact_locality: dict[str, list[_PostalEntry]] = {}
+        self._entries_by_locality_token: dict[str, list[_PostalEntry]] = {}
         for entry in entries:
+            if entry.kode_pos:
+                self._entries_by_postal_code.setdefault(entry.kode_pos, []).append(entry)
             if not entry.normalized_locality:
                 continue
             self._entries_by_locality.setdefault(entry.normalized_locality, []).append(entry)
+            compact_locality = _compact_text(entry.normalized_locality)
+            if compact_locality:
+                self._entries_by_compact_locality.setdefault(compact_locality, []).append(entry)
+            for token in _locality_tokens(entry.normalized_locality):
+                self._entries_by_locality_token.setdefault(token, []).append(entry)
 
     @classmethod
     def from_excel_dir(cls, db_dir: Path) -> "PostalCodeIndex":
@@ -120,6 +131,7 @@ class PostalCodeIndex:
                     normalized_locality=_normalize_text(locality),
                     normalized_city=_normalize_text(city.name),
                     normalized_province=_normalize_text(province_name),
+                    normalized_district=_normalize_text(districts.get(district_code, "")),
                 )
             )
         return cls(entries)
@@ -151,6 +163,7 @@ class PostalCodeIndex:
                         normalized_locality=_normalize_text(locality),
                         normalized_city=_normalize_text(city_name),
                         normalized_province=_normalize_text(province_name),
+                        normalized_district=_normalize_text(row.get("district_name") or ""),
                     )
                 )
         return cls(entries)
@@ -212,6 +225,7 @@ class PostalCodeIndex:
                 normalized_locality=_normalize_text(record.get("locality") or ""),
                 normalized_city=_normalize_text(record.get("city_name") or ""),
                 normalized_province=_normalize_text(record.get("province_name") or ""),
+                normalized_district=_normalize_text(record.get("district_name") or ""),
             )
             for record in records
         ]
@@ -219,7 +233,7 @@ class PostalCodeIndex:
 
     def lookup(self, fields: dict[str, FieldResult]) -> PostalCodeMatch | None:
         query = _query_from_fields(fields)
-        if not query["kelurahan"] and not query["alamat"]:
+        if not query["kode_pos"] and not query["kelurahan"]:
             return None
 
         scored: list[tuple[float, _PostalEntry, list[str]]] = []
@@ -253,27 +267,31 @@ class PostalCodeIndex:
         )
 
     def _candidate_entries(self, query: dict[str, str]) -> list[_PostalEntry]:
+        if query["kode_pos"]:
+            return list(self._entries_by_postal_code.get(query["kode_pos"], []))
         if not query["kelurahan"]:
-            return self.entries
+            return []
         compact_query = _compact_text(query["kelurahan"])
         candidates: list[_PostalEntry] = []
         seen: set[tuple[str, str, str]] = set()
-        for locality, entries in self._entries_by_locality.items():
-            if not locality:
+        locality_matches = list(self._entries_by_locality.get(query["kelurahan"], []))
+        locality_matches.extend(self._entries_by_compact_locality.get(compact_query, []))
+        for token in _locality_tokens(query["kelurahan"]):
+            locality_matches.extend(self._entries_by_locality_token.get(token, []))
+
+        if not locality_matches:
+            for entries in self._entries_by_locality.values():
+                locality_matches.extend(entries)
+
+        for entry in locality_matches:
+            locality = entry.normalized_locality
+            if not _locality_matches_query(locality, query["kelurahan"], compact_query):
                 continue
-            if not (
-                query["kelurahan"] == locality
-                or query["kelurahan"] in locality
-                or locality in query["kelurahan"]
-                or compact_query == _compact_text(locality)
-            ):
+            key = (entry.kode_pos, entry.address, entry.locality)
+            if key in seen:
                 continue
-            for entry in entries:
-                key = (entry.kode_pos, entry.address, entry.locality)
-                if key in seen:
-                    continue
-                seen.add(key)
-                candidates.append(entry)
+            seen.add(key)
+            candidates.append(entry)
         return candidates
 
 
@@ -301,6 +319,7 @@ def get_default_postal_code_index() -> PostalCodeIndex | None:
 
 def _query_from_fields(fields: dict[str, FieldResult]) -> dict[str, str]:
     return {
+        "kode_pos": _normalize_postal_code_value(_field_value(fields, "kode_pos")),
         "provinsi": _normalize_text(_field_value(fields, "provinsi")),
         "kota": _normalize_text(_field_value(fields, "kabupaten_kota")),
         "kecamatan": _normalize_text(_field_value(fields, "kecamatan")),
@@ -319,6 +338,12 @@ def _field_value(fields: dict[str, FieldResult], field_name: str) -> str:
 def _score_entry(entry: _PostalEntry, query: dict[str, str]) -> tuple[float, list[str]]:
     score = 0.0
     evidence: list[str] = []
+    if query["kode_pos"]:
+        if query["kode_pos"] != entry.kode_pos:
+            return 0.0, []
+        score += 8
+        evidence.append(f"kode_pos:{entry.kode_pos}")
+
     if query["provinsi"]:
         if not _same_normalized_text(query["provinsi"], entry.normalized_province):
             return 0.0, []
@@ -347,9 +372,17 @@ def _score_entry(entry: _PostalEntry, query: dict[str, str]) -> tuple[float, lis
             return 0.0, []
         evidence.append(f"kelurahan_desa:{entry.locality or entry.address}")
 
-    if query["kecamatan"] and _contains_phrase(entry.normalized_address, query["kecamatan"]):
-        score += 2
-        evidence.append(f"kecamatan:{query['kecamatan']}")
+    if query["kecamatan"]:
+        if _same_normalized_text(query["kecamatan"], entry.normalized_district) or _contains_phrase(
+            entry.normalized_district, query["kecamatan"]
+        ):
+            score += 2
+            evidence.append(f"kecamatan:{entry.district_name}")
+        elif _contains_phrase(entry.normalized_address, query["kecamatan"]):
+            score += 2
+            evidence.append(f"kecamatan:{query['kecamatan']}")
+        elif entry.normalized_district:
+            return 0.0, []
 
     if query["alamat"]:
         address_hits = _shared_address_terms(query["alamat"], entry.normalized_address)
@@ -370,6 +403,25 @@ def _contains_phrase(haystack: str, needle: str) -> bool:
     compact_haystack = _compact_text(haystack)
     compact_needle = _compact_text(needle)
     return bool(compact_haystack and compact_needle and compact_needle in compact_haystack)
+
+
+def _locality_matches_query(locality: str, query_locality: str, compact_query: str) -> bool:
+    return bool(
+        query_locality == locality
+        or query_locality in locality
+        or locality in query_locality
+        or compact_query == _compact_text(locality)
+    )
+
+
+def _locality_tokens(value: str) -> set[str]:
+    return {token for token in (value or "").split() if len(token) >= 3}
+
+
+def _normalize_postal_code_value(value: str | None) -> str:
+    candidate = re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+    candidate = candidate.translate(str.maketrans({"O": "0", "I": "1", "L": "1", "S": "5", "B": "8"}))
+    return candidate if re.fullmatch(r"\d{5}", candidate) else ""
 
 
 def _same_normalized_text(left: str, right: str) -> bool:

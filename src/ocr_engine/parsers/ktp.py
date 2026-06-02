@@ -287,6 +287,16 @@ def parse_ktp_text(raw_text: str) -> DocumentResult:
     if fields["nik"].status == "invalid":
         warnings.append("invalid:nik")
 
+    for field_name, field in fields.items():
+        if field.status != "invalid":
+            continue
+        warning = f"invalid:{field_name}"
+        if warning not in warnings:
+            warnings.append(warning)
+
+    if fields["kode_pos"].metadata.get("verification_status") == "unconfirmed":
+        warnings.append("unverified:kode_pos")
+
     if _looks_like_bad_ktp_crop(raw_text, fields):
         warnings.append("quality:possible_non_ktp_crop")
 
@@ -742,29 +752,126 @@ def _apply_ktp_fallbacks(raw_text: str, fields: dict[str, FieldResult]) -> None:
         elif fields["berlaku_hingga"].status == "ok":
             fields["berlaku_hingga"] = make_missing()
 
-    if fields["kode_pos"].status != "ok":
-        postal_code = lookup_postal_code(fields)
-        if postal_code:
-            _canonicalize_regions_from_postal_match(fields, postal_code)
+    _validate_or_fill_kode_pos(fields)
+
+
+def _validate_or_fill_kode_pos(fields: dict[str, FieldResult]) -> None:
+    field = fields["kode_pos"]
+    if field.status == "ok" and field.value:
+        normalized = _normalize_kode_pos_value(field.value)
+        if not normalized:
             fields["kode_pos"] = FieldResult(
-                value=postal_code.kode_pos,
-                confidence=postal_code.confidence,
-                status="ok",
-                evidence=postal_code.evidence,
-                raw="db_kode_wilayah",
-                metadata={
-                    "kelurahan": postal_code.kelurahan,
-                    "kecamatan": postal_code.kecamatan,
-                    "kode_kecamatan": postal_code.kode_kecamatan,
-                    "kode_kota": postal_code.kode_kota,
-                    "nama_kota": postal_code.nama_kota,
-                    "kode_provinsi": postal_code.kode_provinsi,
-                    "nama_provinsi": postal_code.nama_provinsi,
-                    "alamat_lengkap": postal_code.alamat_lengkap,
-                    "total_options": postal_code.total_options,
-                    "match_status": postal_code.match_status,
-                },
+                value=field.value,
+                confidence=min(field.confidence or 0.35, 0.35),
+                status="invalid",
+                evidence=[*field.evidence, "invalid:kode_pos_format"],
+                raw=field.raw,
+                metadata=field.metadata,
             )
+            return
+
+        evidence = list(field.evidence)
+        if normalized != field.value:
+            evidence.append("normalize:kode_pos")
+        fields["kode_pos"] = FieldResult(
+            value=normalized,
+            confidence=field.confidence,
+            status="ok",
+            evidence=evidence,
+            raw=field.raw,
+            metadata=field.metadata,
+        )
+
+        confirmed = lookup_postal_code(fields)
+        if confirmed and confirmed.kode_pos == normalized and _postal_match_has_region_evidence(confirmed):
+            _canonicalize_regions_from_postal_match(fields, confirmed)
+            fields["kode_pos"] = FieldResult(
+                value=normalized,
+                confidence=max(field.confidence or 0.0, confirmed.confidence),
+                status="ok",
+                evidence=[*evidence, *confirmed.evidence],
+                raw=field.raw,
+                metadata=_postal_code_metadata(confirmed),
+            )
+            return
+
+        regional_match = _lookup_postal_code_without_kode_pos(fields)
+        if regional_match and regional_match.match_status == "exact_match" and regional_match.kode_pos != normalized:
+            fields["kode_pos"] = FieldResult(
+                value=normalized,
+                confidence=min(field.confidence or 0.35, 0.35),
+                status="invalid",
+                evidence=[*evidence, *regional_match.evidence, "db_kode_wilayah:mismatch"],
+                raw=field.raw,
+                metadata={**_postal_code_metadata(regional_match), "expected_kode_pos": regional_match.kode_pos},
+            )
+            return
+
+        metadata = _postal_code_metadata(confirmed) if confirmed else field.metadata
+        metadata = {**metadata, "verification_status": "unconfirmed"}
+        unconfirmed_evidence = [*evidence]
+        if confirmed:
+            unconfirmed_evidence.extend(confirmed.evidence)
+        unconfirmed_evidence.append("db_kode_wilayah:unconfirmed")
+        fields["kode_pos"] = FieldResult(
+            value=normalized,
+            confidence=min(field.confidence or 0.72, 0.72),
+            status="ok",
+            evidence=unconfirmed_evidence,
+            raw=field.raw,
+            metadata=metadata,
+        )
+        return
+
+    if field.status != "missing":
+        return
+
+    postal_code = lookup_postal_code(fields)
+    if not postal_code:
+        return
+    _canonicalize_regions_from_postal_match(fields, postal_code)
+    fields["kode_pos"] = FieldResult(
+        value=postal_code.kode_pos,
+        confidence=postal_code.confidence,
+        status="ok",
+        evidence=postal_code.evidence,
+        raw="db_kode_wilayah",
+        metadata=_postal_code_metadata(postal_code),
+    )
+
+
+def _lookup_postal_code_without_kode_pos(fields: dict[str, FieldResult]):
+    query_fields = dict(fields)
+    query_fields["kode_pos"] = make_missing()
+    return lookup_postal_code(query_fields)
+
+
+def _postal_code_metadata(postal_code) -> dict:
+    return {
+        "kelurahan": postal_code.kelurahan,
+        "kecamatan": postal_code.kecamatan,
+        "kode_kecamatan": postal_code.kode_kecamatan,
+        "kode_kota": postal_code.kode_kota,
+        "nama_kota": postal_code.nama_kota,
+        "kode_provinsi": postal_code.kode_provinsi,
+        "nama_provinsi": postal_code.nama_provinsi,
+        "alamat_lengkap": postal_code.alamat_lengkap,
+        "total_options": postal_code.total_options,
+        "match_status": postal_code.match_status,
+    }
+
+
+def _postal_match_has_region_evidence(postal_code) -> bool:
+    return any(
+        evidence.startswith("kelurahan_desa:") or evidence.startswith("kecamatan:")
+        for evidence in postal_code.evidence
+    )
+
+
+def _normalize_kode_pos_value(value: str | None) -> str:
+    candidate = re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+    candidate = candidate.translate(str.maketrans({"O": "0", "I": "1", "L": "1", "S": "5", "B": "8"}))
+    return candidate if re.fullmatch(r"\d{5}", candidate) else ""
 
 
 def _canonicalize_regions_from_postal_match(fields: dict[str, FieldResult], postal_code) -> None:
