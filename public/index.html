@@ -68,6 +68,32 @@
       padding: 17px 18px;
       margin-bottom: 18px;
     }
+    .document-tabs {
+      display: inline-grid;
+      grid-template-columns: repeat(2, minmax(82px, 1fr));
+      gap: 4px;
+      margin-bottom: 12px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #f5f8fb;
+    }
+    .document-tab {
+      min-height: 34px;
+      border: 0;
+      border-radius: 5px;
+      padding: 7px 14px;
+      background: transparent;
+      color: #405671;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .document-tab[aria-selected="true"] {
+      background: var(--soft);
+      color: var(--accent);
+    }
     input[type="file"] {
       width: 100%;
       padding: 9px;
@@ -268,6 +294,10 @@
 
     <section class="upload-card">
       <form id="ocr-form">
+        <div class="document-tabs" role="tablist" aria-label="Jenis dokumen">
+          <button class="document-tab" id="tab-ktp" type="button" role="tab" aria-selected="true" data-document-type="KTP">KTP</button>
+          <button class="document-tab" id="tab-stnk" type="button" role="tab" aria-selected="false" data-document-type="STNK">STNK</button>
+        </div>
         <input id="file-input" name="file" type="file" accept="image/*,application/pdf,.pdf" required />
       </form>
     </section>
@@ -310,12 +340,12 @@
     const copyRow = document.getElementById("copy-row");
     const copyJson = document.getElementById("copy-json");
     const liveStatus = document.getElementById("live-status");
-
-    const DEFAULT_ENDPOINT = "/ui/ocr?document_type=AUTO&mode=accurate";
+    const documentTabs = Array.from(document.querySelectorAll(".document-tab"));
 
     let lastJson = null;
     let activePreviewUrl = "";
     let activeRequestId = 0;
+    let selectedDocumentType = "KTP";
 
     const FIELD_ORDER = {
       KTP: [
@@ -359,12 +389,32 @@
     };
 
     fileInput.addEventListener("change", handleFileSelection);
+    documentTabs.forEach((tab) => tab.addEventListener("click", handleDocumentTabClick));
 
     async function handleFileSelection() {
       const file = fileInput.files[0];
       if (!file) return;
       setPreview(file);
       await runOcr(file);
+    }
+
+    async function handleDocumentTabClick(event) {
+      const nextType = event.currentTarget.dataset.documentType;
+      if (!nextType || nextType === selectedDocumentType) return;
+      selectedDocumentType = nextType;
+      renderDocumentTabs();
+      const file = fileInput.files[0];
+      if (file) await runOcr(file);
+    }
+
+    function renderDocumentTabs() {
+      documentTabs.forEach((tab) => {
+        tab.setAttribute("aria-selected", tab.dataset.documentType === selectedDocumentType ? "true" : "false");
+      });
+    }
+
+    function ocrEndpoint() {
+      return `/ui/ocr?document_type=${encodeURIComponent(selectedDocumentType)}&mode=accurate`;
     }
 
     function setPreview(file) {
@@ -387,7 +437,7 @@
         body.append("file", file);
 
         const requestStarted = performance.now();
-        const response = await fetch(DEFAULT_ENDPOINT, { method: "POST", body });
+        const response = await fetch(ocrEndpoint(), { method: "POST", body });
         const roundtripMs = performance.now() - requestStarted;
         const data = await parseJsonResponse(response, "OCR gagal");
         if (!response.ok) throw new Error(data.detail || "OCR gagal.");
