@@ -1171,6 +1171,23 @@ class KtpParserTests(unittest.TestCase):
 
         self.assertEqual(result.fields["alamat"].value, "JL BEND. HILIR VI/17.")
 
+    def test_parse_ktp_restores_missing_space_before_address_direction(self):
+        raw_text = """
+        PROVINSI DKI JAKARTA
+        JAKARTA SELATAN
+        NIK : 1403091211910007
+        Nama : RIDHO PRIUTOMO
+        Tempat/Tgl Lahir : TQL DURI, 12-11-1991
+        Alamat : JL. MANGGARAIUTARA II/G.4 NO.25
+        RT/RW : 008/001
+        Kel/Desa : MANGGARAI
+        Kecamatan : TEBET
+        """
+
+        result = parse_ktp_text(raw_text)
+
+        self.assertEqual(result.fields["alamat"].value, "JL. MANGGARAI UTARA II/G.4 NO.25")
+
     def test_parse_ktp_splits_joined_block_address_token(self):
         raw_text = """
         NIK : 1671067108810007

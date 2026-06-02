@@ -244,6 +244,20 @@ class ApiEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
 
+    def test_ui_ocr_endpoint_does_not_require_api_key(self):
+        client = _client_with_fake_provider()
+
+        with patch.dict("os.environ", {"OCR_API_KEY": "secret"}, clear=False):
+            response = client.post(
+                "/ui/ocr?document_type=AUTO&mode=accurate",
+                files={"file": ("ktp.jpg", _jpeg_bytes(), "image/jpeg")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["document_type"], "KTP")
+        self.assertEqual(payload["ocr"]["processing_mode"], "accurate")
+
     def test_fixed_ktp_endpoint_returns_expected_document_type(self):
         client = _client_with_fake_provider()
 

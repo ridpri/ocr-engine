@@ -7,707 +7,313 @@ def frontend_html() -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OCR KTP/STNK Tester</title>
+  <title>OCR KTP/STNK</title>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f6f7f9;
+      --bg: #f4f7fb;
       --surface: #ffffff;
-      --surface-2: #eef2f7;
-      --text: #17202a;
-      --muted: #647181;
-      --border: #d9e0e8;
-      --accent: #1768ac;
-      --accent-2: #0d4d80;
+      --ink: #061a32;
+      --muted: #516985;
+      --border: #cdd9e8;
+      --soft: #e7fbfd;
+      --accent: #006f7c;
       --ok: #127a4a;
       --warn: #a35d00;
       --bad: #b42318;
-      --shadow: 0 18px 50px rgba(20, 31, 43, 0.10);
     }
-
     * { box-sizing: border-box; }
     body {
       margin: 0;
+      min-height: 100vh;
       background: var(--bg);
-      color: var(--text);
+      color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 15px;
       letter-spacing: 0;
     }
     main {
-      width: min(1180px, calc(100% - 32px));
+      width: min(760px, calc(100% - 32px));
       margin: 0 auto;
-      padding: 28px 0 40px;
+      padding: 30px 0 48px;
     }
     header {
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      gap: 18px;
-      align-items: flex-end;
-      margin-bottom: 22px;
+      gap: 16px;
+      margin-bottom: 14px;
     }
     h1 {
-      margin: 0 0 7px;
-      font-size: clamp(26px, 4vw, 38px);
-      line-height: 1.08;
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
       font-weight: 750;
     }
-    p { margin: 0; color: var(--muted); line-height: 1.55; }
-    .health {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      border-radius: 8px;
-      padding: 9px 12px;
-      color: var(--muted);
+    .choose-label {
+      color: #2e4662;
       font-size: 13px;
-    }
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 999px;
-      background: #aab4bf;
-    }
-    .dot.ok { background: var(--ok); }
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(310px, 420px) minmax(0, 1fr);
-      gap: 18px;
-      align-items: start;
-    }
-    section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow: var(--shadow);
-    }
-    .panel { padding: 18px; }
-    .panel h2 {
-      margin: 0 0 14px;
-      font-size: 16px;
       line-height: 1.2;
-    }
-    .dropzone {
-      border: 1.5px dashed #aeb9c6;
-      background: #fbfcfd;
-      border-radius: 8px;
-      min-height: 178px;
-      display: grid;
-      place-items: center;
-      padding: 18px;
-      text-align: center;
       cursor: pointer;
-      transition: border-color .15s ease, background .15s ease;
     }
-    .dropzone.dragover {
-      border-color: var(--accent);
-      background: #eef6fc;
+    .upload-card,
+    .result-card {
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
     }
-    .dropzone strong {
-      display: block;
-      margin-bottom: 4px;
+    .upload-card {
+      padding: 17px 18px;
+      margin-bottom: 18px;
+    }
+    input[type="file"] {
+      width: 100%;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #fbfdff;
+      color: #38506c;
+      font: inherit;
       font-size: 15px;
     }
-    input[type="file"] { display: none; }
-    .preview {
-      margin-top: 14px;
+    .result-card {
+      padding: 17px 18px 18px;
+    }
+    .checkerboard {
+      min-height: 340px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 5px;
+      background:
+        linear-gradient(45deg, #182636 25%, transparent 25%) 0 0 / 24px 24px,
+        linear-gradient(45deg, transparent 75%, #182636 75%) 0 0 / 24px 24px,
+        linear-gradient(45deg, transparent 75%, #182636 75%) 12px 12px / 24px 24px,
+        linear-gradient(45deg, #182636 25%, #0f1b29 25%) 12px 12px / 24px 24px;
+    }
+    .checkerboard img {
       display: none;
-      gap: 12px;
-      align-items: center;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px;
-      background: var(--surface-2);
-    }
-    .preview img {
-      width: 92px;
-      height: 64px;
-      object-fit: cover;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: #fff;
-    }
-    .preview span {
-      display: block;
-      color: var(--muted);
-      font-size: 13px;
-      overflow-wrap: anywhere;
-    }
-    label.field-label {
-      display: block;
-      margin: 16px 0 7px;
-      font-weight: 650;
-      font-size: 13px;
-      color: #354251;
-    }
-    select,
-    input[type="password"],
-    input[type="text"] {
-      width: 100%;
-      border: 1px solid var(--border);
-      background: #fff;
-      border-radius: 8px;
-      padding: 11px 12px;
-      font: inherit;
-      color: var(--text);
-    }
-    button {
-      border: 0;
-      border-radius: 8px;
-      padding: 11px 14px;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-      background: var(--accent);
-      color: #fff;
-    }
-    button:hover { background: var(--accent-2); }
-    button:disabled {
-      opacity: .55;
-      cursor: not-allowed;
-    }
-    .actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 16px;
-    }
-    .secondary {
-      background: #e6ebf1;
-      color: #243141;
-    }
-    .secondary:hover { background: #d8e0e8; }
-    .status {
-      margin-top: 14px;
-      min-height: 22px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-    .check-row {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      margin-top: 14px;
-      color: #354251;
-      font-size: 13px;
-      line-height: 1.45;
-    }
-    .check-row input {
-      margin-top: 3px;
-      width: 16px;
-      height: 16px;
-      flex: 0 0 auto;
-    }
-    .quality-hint {
-      margin-top: 8px;
-      border: 1px solid var(--border);
-      background: #f8fafc;
-      color: var(--muted);
-      border-radius: 8px;
-      padding: 9px 10px;
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    .quality-hint.warn {
-      border-color: #f2c572;
-      background: #fff8e8;
-      color: #6b3d00;
-    }
-    .quality-hint.bad {
-      border-color: #f0aaa4;
-      background: #fff1f0;
-      color: #7a1b12;
-    }
-    .result-header {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      border-bottom: 1px solid var(--border);
-      padding: 16px 18px;
-    }
-    .result-header h2 { margin: 0; font-size: 16px; }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      min-height: 28px;
-      border-radius: 999px;
-      padding: 5px 10px;
-      font-size: 12px;
-      font-weight: 750;
-      color: #fff;
-      background: var(--muted);
-    }
-    .badge.ok { background: var(--ok); }
-    .badge.warn { background: var(--warn); }
-    .badge.bad { background: var(--bad); }
-    .empty {
-      padding: 34px 18px;
-      color: var(--muted);
-      text-align: center;
+      max-width: 100%;
+      max-height: 62vh;
+      object-fit: contain;
     }
     .summary {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
       gap: 10px;
-      padding: 16px 18px 4px;
+      margin-top: 15px;
+      max-width: 480px;
     }
-    .metric {
-      background: var(--surface-2);
-      border-radius: 8px;
-      padding: 11px;
-    }
-    .metric span {
-      display: block;
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 3px;
-    }
-    .metric strong {
-      display: block;
-      font-size: 15px;
-      overflow-wrap: anywhere;
-    }
-    .result-section {
-      padding-top: 12px;
-      border-top: 1px solid var(--border);
-    }
-    .result-tabs {
-      display: flex;
-      gap: 8px;
-      padding: 14px 18px 0;
-      border-top: 1px solid var(--border);
-    }
-    .tab-button {
-      background: #e6ebf1;
-      color: #243141;
-      border: 1px solid var(--border);
-      padding: 9px 12px;
-    }
-    .tab-button.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-    .tab-button:disabled {
-      opacity: .45;
-      cursor: not-allowed;
-    }
-    .result-section:first-child {
-      border-top: 0;
-      padding-top: 0;
-    }
-    .section-title {
-      display: flex;
-      justify-content: space-between;
+    .summary-row {
+      display: grid;
+      grid-template-columns: minmax(96px, 140px) minmax(120px, max-content);
       gap: 12px;
       align-items: center;
-      padding: 14px 18px 0;
+      min-height: 37px;
     }
-    .section-title h3 {
-      margin: 0;
-      font-size: 14px;
-      line-height: 1.2;
-    }
-    .section-title span {
+    .summary-row span,
+    .field-name {
       color: var(--muted);
-      font-size: 12px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-    }
-    .table-wrap {
-      overflow-x: auto;
-    }
-    th, td {
-      border-top: 1px solid var(--border);
-      padding: 10px 12px;
-      text-align: left;
-      vertical-align: top;
       font-size: 13px;
     }
-    th {
-      color: var(--muted);
+    .value-pill {
+      min-width: 96px;
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 15px;
+      border-radius: 7px;
+      background: var(--soft);
+      color: var(--accent);
       font-weight: 750;
-      background: #fbfcfd;
+      overflow-wrap: anywhere;
     }
-    td.value { font-weight: 650; overflow-wrap: anywhere; }
-    .value-meta {
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 500;
-    }
-    .field-status {
-      font-weight: 750;
-      color: var(--ok);
-    }
-    .field-status.missing,
-    .field-status.invalid {
-      color: var(--bad);
-    }
-    .confidence {
-      white-space: nowrap;
-      font-variant-numeric: tabular-nums;
-    }
-    .comparison-table {
-      min-width: 760px;
-    }
-    .comparison-table th:nth-child(4),
-    .comparison-table td:nth-child(4) {
-      text-align: center;
-      width: 76px;
-    }
-    .match-indicator {
-      display: inline-grid;
-      place-items: center;
-      width: 24px;
-      height: 24px;
-      border-radius: 999px;
+    .value-pill.ok {
       background: #e9f8ef;
       color: var(--ok);
-      font-weight: 850;
-      line-height: 1;
     }
-    .match-indicator.diff {
+    .value-pill.warn {
+      background: #fff8e8;
+      color: var(--warn);
+    }
+    .value-pill.bad {
       background: #fff1f0;
       color: var(--bad);
     }
-    .difference-note {
-      color: #354152;
-      line-height: 1.35;
-    }
-    .warnings {
+    .notice {
       display: none;
-      margin: 14px 18px 0;
-      border: 1px solid #f2c572;
-      background: #fff8e8;
-      color: #6b3d00;
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 13px;
-    }
-    .assessment {
-      display: none;
-      margin: 14px 18px 0;
+      margin-top: 14px;
+      padding: 11px 12px;
       border: 1px solid var(--border);
-      background: #f8fafc;
-      color: #243141;
-      border-radius: 8px;
-      padding: 10px 12px;
+      border-radius: 7px;
+      background: #f8fbfe;
+      color: #354251;
       font-size: 13px;
       line-height: 1.45;
     }
-    .assessment.review {
+    .notice.warn {
       border-color: #f2c572;
       background: #fff8e8;
       color: #6b3d00;
     }
-    .assessment.rejected {
+    .notice.bad {
       border-color: #f0aaa4;
       background: #fff1f0;
       color: #7a1b12;
     }
+    .fields-wrap {
+      display: none;
+      margin-top: 14px;
+    }
+    .fields-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+    .fields-list { display: grid; }
+    .field-row {
+      display: grid;
+      grid-template-columns: minmax(108px, 180px) minmax(0, 1fr);
+      gap: 12px;
+      padding: 11px 0;
+      border-bottom: 1px solid #edf1f6;
+    }
+    .field-row:last-child { border-bottom: 0; }
+    .field-value {
+      color: #162236;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .field-note {
+      margin-top: 4px;
+      color: var(--warn);
+      font-size: 12px;
+      font-weight: 650;
+    }
     details {
-      margin: 14px 18px 18px;
+      display: none;
+      margin-top: 14px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
+      border-radius: 7px;
+      background: #fafcff;
     }
     summary {
-      padding: 10px 12px;
       cursor: pointer;
-      font-weight: 700;
-      background: #fbfcfd;
+      padding: 10px 12px;
+      font-weight: 650;
+      color: #354251;
     }
     pre {
       margin: 0;
-      padding: 12px;
+      padding: 0 12px 12px;
       overflow: auto;
-      max-height: 330px;
-      background: #0f1720;
-      color: #e7edf5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
-      line-height: 1.45;
+      line-height: 1.5;
+      color: #26313f;
     }
     .copy-row {
-      display: flex;
+      display: none;
       justify-content: flex-end;
-      padding: 0 18px 18px;
+      margin-top: 14px;
     }
-    .api-docs {
-      margin-top: 18px;
-      padding: 18px;
-    }
-    .api-docs h2 {
-      margin: 0 0 10px;
-      font-size: 16px;
-    }
-    .api-docs h3 {
-      margin: 18px 0 8px;
-      font-size: 14px;
-    }
-    .api-docs ul {
-      margin: 8px 0 0;
-      padding-left: 18px;
-      color: var(--muted);
-      line-height: 1.55;
-    }
-    .api-docs code {
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 1px 5px;
+    button {
+      border: 0;
+      border-radius: 7px;
+      padding: 10px 13px;
+      background: #e6ebf1;
       color: #243141;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
     }
-    .api-warning {
-      border: 1px solid #f2c572;
-      background: #fff8e8;
-      color: #6b3d00;
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 13px;
-      line-height: 1.45;
-      margin: 12px 0;
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
-    .api-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-      gap: 10px;
-      margin-top: 12px;
-    }
-    .api-tile {
-      border: 1px solid var(--border);
-      background: #fbfcfd;
-      border-radius: 8px;
-      padding: 11px;
-      font-size: 13px;
-      line-height: 1.45;
-    }
-    @media (max-width: 850px) {
-      header { align-items: flex-start; flex-direction: column; }
-      .layout { grid-template-columns: 1fr; }
-      .summary { grid-template-columns: 1fr; }
+    @media (max-width: 640px) {
+      main { width: min(100%, calc(100% - 24px)); padding-top: 24px; }
+      header { align-items: flex-start; }
+      .checkerboard { min-height: 250px; }
+      .summary-row { grid-template-columns: minmax(94px, 128px) minmax(96px, 1fr); }
+      .value-pill { width: 100%; }
+      .field-row {
+        grid-template-columns: 1fr;
+        gap: 3px;
+        padding: 12px 0;
+      }
+      .field-value { font-size: 15px; }
     }
   </style>
 </head>
 <body>
   <main>
     <header>
-      <div>
-        <h1>OCR KTP/STNK Tester</h1>
-        <p>Upload gambar dokumen, jalankan OCR lokal, lalu cek field, confidence, warning, dan JSON hasil ekstraksi.</p>
-      </div>
-      <div class="health"><span id="health-dot" class="dot"></span><span id="health-text">Checking API</span></div>
+      <h1>OCR KTP/STNK</h1>
+      <label class="choose-label" for="file-input">Choose a photo</label>
     </header>
 
-    <div class="layout">
-      <section class="panel">
-        <h2>Input Dokumen</h2>
-        <form id="ocr-form">
-          <label class="dropzone" id="dropzone" for="file-input">
-            <span>
-              <strong>Drop gambar di sini atau klik untuk browse</strong>
-              <span>JPG, PNG, BMP, WEBP, PDF halaman pertama.</span>
-            </span>
-          </label>
-          <input id="file-input" name="file" type="file" accept="image/*,application/pdf,.pdf" required />
-          <div class="preview" id="preview">
-            <img id="preview-img" alt="Preview dokumen" />
-            <div>
-              <strong id="file-name"></strong>
-              <span id="file-meta"></span>
-            </div>
-          </div>
+    <section class="upload-card">
+      <form id="ocr-form">
+        <input id="file-input" name="file" type="file" accept="image/*,application/pdf,.pdf" required />
+      </form>
+    </section>
 
-          <label class="field-label" for="document-type">Tipe dokumen</label>
-          <select id="document-type" name="document_type">
-            <option value="KTP" selected>KTP</option>
-            <option value="STNK">STNK</option>
-            <option value="AUTO">AUTO</option>
-          </select>
+    <section class="result-card">
+      <div class="checkerboard">
+        <img id="result-preview-img" alt="Preview dokumen" />
+      </div>
 
-          <label class="field-label" for="engine-type">Engine</label>
-          <select id="engine-type" name="engine_type">
-            <option value="local">Local PaddleOCR</option>
-            <option value="vps-local">VPS Local PaddleOCR</option>
-          </select>
+      <div class="summary" aria-live="polite">
+        <div class="summary-row"><span>Dokumen</span><strong class="value-pill" id="summary-type">-</strong></div>
+        <div class="summary-row"><span>Status</span><strong class="value-pill" id="summary-status">-</strong></div>
+        <div class="summary-row"><span>Waktu proses</span><strong class="value-pill" id="summary-processing-time">-</strong></div>
+      </div>
 
-          <label class="field-label" for="vps-api-key">VPS API Key</label>
-          <input id="vps-api-key" name="vps_api_key" type="password" placeholder="Isi kalau memilih engine VPS" autocomplete="off" />
-
-          <div class="actions">
-            <button id="submit-button" type="submit">Jalankan OCR</button>
-            <button class="secondary" id="reset-button" type="button">Reset</button>
-          </div>
-          <div class="status" id="status">Pilih gambar untuk mulai.</div>
-        </form>
-      </section>
-
-      <section id="result-card">
-        <div class="result-header">
-          <h2>Hasil Ekstraksi</h2>
-          <span id="review-badge" class="badge">Belum ada hasil</span>
-        </div>
-        <div id="empty-state" class="empty">Hasil akan muncul setelah OCR selesai.</div>
-        <div id="result-body" style="display:none;">
-          <div id="initial-section" class="result-section">
-          <div class="section-title">
-            <h3>Hasil OCR</h3>
-            <span id="initial-status">Menunggu OCR</span>
-          </div>
-          <div class="summary">
-            <div class="metric"><span>Document Type</span><strong id="summary-type">-</strong></div>
-            <div class="metric"><span>OCR Tokens</span><strong id="summary-tokens">-</strong></div>
-            <div class="metric"><span>OCR Retry</span><strong id="summary-retry">-</strong></div>
-            <div class="metric"><span>Max Side</span><strong id="summary-resolution">-</strong></div>
-            <div class="metric"><span>Warnings</span><strong id="summary-warnings">-</strong></div>
-            <div class="metric"><span>Decision</span><strong id="summary-decision">-</strong></div>
-            <div class="metric"><span>Engine Used</span><strong id="summary-engine-used">-</strong></div>
-            <div class="metric"><span>Auto Publish</span><strong id="summary-auto-publish">-</strong></div>
-            <div class="metric"><span>Pipeline Time</span><strong id="summary-pipeline-time">-</strong></div>
-            <div class="metric"><span>OCR Time</span><strong id="summary-ocr-time">-</strong></div>
-            <div class="metric"><span>Prepare Time</span><strong id="summary-prepare-time">-</strong></div>
-            <div class="metric"><span>Quality Time</span><strong id="summary-quality-time">-</strong></div>
-            <div class="metric"><span>Roundtrip</span><strong id="summary-roundtrip-time">-</strong></div>
-          </div>
-          <div id="assessment" class="assessment"></div>
-          <div id="warnings" class="warnings"></div>
-          <table>
-            <thead>
-              <tr>
-                <th>Field</th>
-                <th>Value</th>
-                <th>Status</th>
-                <th>Confidence</th>
-              </tr>
-            </thead>
-            <tbody id="fields-body"></tbody>
-          </table>
-          <details>
-            <summary>Raw OCR Masked</summary>
-            <pre id="raw-ocr"></pre>
-          </details>
-          <details>
-            <summary>Raw JSON</summary>
-            <pre id="raw-json"></pre>
-          </details>
-          <details id="it-output-details" style="display:none;">
-            <summary>Output IT</summary>
-            <pre id="it-output-json"></pre>
-          </details>
-          <div class="copy-row">
-            <button class="secondary" id="copy-json" type="button">Copy JSON</button>
-          </div>
-          </div>
-          <div id="enrichment-section" class="result-section" style="display:none;">
-            <div class="section-title">
-              <h3>OCR Background</h3>
-              <span id="enrichment-status">Belum ada job</span>
-            </div>
-            <div class="summary">
-              <div class="metric"><span>Status</span><strong id="enrichment-summary-status">-</strong></div>
-              <div class="metric"><span>Elapsed</span><strong id="enrichment-elapsed">-</strong></div>
-              <div class="metric"><span>Processing</span><strong id="enrichment-processing-time">-</strong></div>
-              <div class="metric"><span>OCR Time</span><strong id="enrichment-ocr-time">-</strong></div>
-              <div class="metric"><span>Decision</span><strong id="enrichment-decision">-</strong></div>
-              <div class="metric"><span>Job ID</span><strong id="enrichment-job-id">-</strong></div>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Field</th>
-                  <th>Value</th>
-                  <th>Status</th>
-                  <th>Confidence</th>
-                </tr>
-              </thead>
-              <tbody id="enrichment-fields-body"></tbody>
-            </table>
-            <details>
-              <summary>Enrichment JSON</summary>
-              <pre id="enrichment-json"></pre>
-            </details>
-          </div>
-          <div id="ai-comparison-section" class="result-section" style="display:none;">
-            <div class="section-title">
-              <h3>VPS OpenClaw AI Comparison</h3>
-              <span id="ai-comparison-status">Belum dijalankan</span>
-            </div>
-            <div class="summary">
-              <div class="metric"><span>Provider</span><strong id="ai-comparison-provider">-</strong></div>
-              <div class="metric"><span>Roundtrip</span><strong id="ai-comparison-roundtrip">-</strong></div>
-              <div class="metric"><span>Processing</span><strong id="ai-comparison-processing-time">-</strong></div>
-              <div class="metric"><span>Decision</span><strong id="ai-comparison-decision">-</strong></div>
-            </div>
-            <div class="table-wrap">
-              <table class="comparison-table">
-                <thead>
-                  <tr>
-                    <th>Field</th>
-                    <th>PaddleOCR</th>
-                    <th>OpenClaw</th>
-                    <th>Cocok</th>
-                    <th>Catatan</th>
-                  </tr>
-                </thead>
-                <tbody id="ai-comparison-fields-body"></tbody>
-              </table>
-            </div>
-            <details>
-              <summary>OpenClaw JSON</summary>
-              <pre id="ai-comparison-json"></pre>
-            </details>
-          </div>
-        </div>
-      </section>
-    </div>
-
+      <div id="assessment" class="notice"></div>
+      <div id="fields-wrap" class="fields-wrap">
+        <div class="fields-title">Hasil OCR</div>
+        <div class="fields-list" id="fields-body"></div>
+      </div>
+      <details id="raw-json-details">
+        <summary>Raw JSON</summary>
+        <pre id="raw-json"></pre>
+      </details>
+      <div class="copy-row" id="copy-row">
+        <button id="copy-json" type="button">Copy JSON</button>
+      </div>
+      <div id="live-status" class="visually-hidden" aria-live="polite"></div>
+    </section>
   </main>
 
   <script>
-    const form = document.getElementById("ocr-form");
     const fileInput = document.getElementById("file-input");
-    const dropzone = document.getElementById("dropzone");
-    const preview = document.getElementById("preview");
-    const previewImg = document.getElementById("preview-img");
-    const fileName = document.getElementById("file-name");
-    const fileMeta = document.getElementById("file-meta");
-    const statusEl = document.getElementById("status");
-    const submitButton = document.getElementById("submit-button");
-    const resetButton = document.getElementById("reset-button");
-    const engineSelect = document.getElementById("engine-type");
-    const compareOpenclaw = document.getElementById("compare-openclaw");
-    const qualityGate = document.getElementById("quality-gate");
-    const qualityGateStatus = document.getElementById("quality-gate-status");
-    const resultBody = document.getElementById("result-body");
-    const emptyState = document.getElementById("empty-state");
-    const reviewBadge = document.getElementById("review-badge");
+    const resultPreviewImg = document.getElementById("result-preview-img");
+    const fieldsWrap = document.getElementById("fields-wrap");
     const fieldsBody = document.getElementById("fields-body");
     const assessmentEl = document.getElementById("assessment");
-    const warningsEl = document.getElementById("warnings");
-    const rawOcr = document.getElementById("raw-ocr");
+    const rawJsonDetails = document.getElementById("raw-json-details");
     const rawJson = document.getElementById("raw-json");
-    const itOutputDetails = document.getElementById("it-output-details");
-    const itOutputJson = document.getElementById("it-output-json");
+    const copyRow = document.getElementById("copy-row");
     const copyJson = document.getElementById("copy-json");
-    const enrichmentSection = document.getElementById("enrichment-section");
-    const enrichmentFieldsBody = document.getElementById("enrichment-fields-body");
-    const enrichmentJson = document.getElementById("enrichment-json");
-    const aiComparisonSection = document.getElementById("ai-comparison-section");
-    const aiComparisonFieldsBody = document.getElementById("ai-comparison-fields-body");
-    const aiComparisonJson = document.getElementById("ai-comparison-json");
+    const liveStatus = document.getElementById("live-status");
+
+    const DEFAULT_ENDPOINT = "/ui/ocr?document_type=AUTO&mode=accurate";
+
     let lastJson = null;
-    let enrichmentPollTimer = null;
-    let selectedFileQuality = null;
-    let lastFile = null;
-    let lastDocumentType = "KTP";
-    let lastEngineType = "local";
-    let lastVpsApiKey = "";
+    let activePreviewUrl = "";
+    let activeRequestId = 0;
+
     const FIELD_ORDER = {
       KTP: [
         "provinsi", "kabupaten_kota", "nik", "nama", "tempat_tanggal_lahir", "jenis_kelamin",
@@ -719,198 +325,77 @@ def frontend_html() -> str:
         "jenis", "tahun_pembuatan", "warna", "bahan_bakar", "berlaku_sampai", "alamat"
       ]
     };
+    const FIELD_LABELS = {
+      provinsi: "Provinsi",
+      kabupaten_kota: "Kabupaten/Kota",
+      nik: "NIK",
+      nama: "Nama",
+      tempat_tanggal_lahir: "Tempat/Tgl Lahir",
+      jenis_kelamin: "Jenis Kelamin",
+      alamat: "Alamat",
+      rt_rw: "RT/RW",
+      kelurahan_desa: "Kelurahan/Desa",
+      kecamatan: "Kecamatan",
+      kode_pos: "Kode Pos",
+      agama: "Agama",
+      status_perkawinan: "Status Perkawinan",
+      pekerjaan: "Pekerjaan",
+      kewarganegaraan: "Kewarganegaraan",
+      berlaku_hingga: "Berlaku Hingga",
+      nomor_polisi: "Nomor Polisi",
+      nama_pemilik: "Nama Pemilik",
+      nomor_rangka: "Nomor Rangka",
+      nomor_mesin: "Nomor Mesin",
+      merek: "Merek",
+      tipe: "Tipe",
+      jenis: "Jenis",
+      tahun_pembuatan: "Tahun Pembuatan",
+      warna: "Warna",
+      bahan_bakar: "Bahan Bakar",
+      berlaku_sampai: "Berlaku Sampai"
+    };
 
-    configureEngineOptions();
-    async function checkHealth() {
-      try {
-        const response = await fetch("/health");
-        if (!response.ok) throw new Error("API error");
-        document.getElementById("health-dot").classList.add("ok");
-        document.getElementById("health-text").textContent = "API online";
-      } catch {
-        document.getElementById("health-text").textContent = "API offline";
-      }
-    }
+    fileInput.addEventListener("change", handleFileSelection);
 
-    function setFile(file) {
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      previewImg.src = url;
-      fileName.textContent = file.name;
-      fileMeta.textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
-      preview.style.display = "flex";
-      statusEl.textContent = "File siap diproses.";
-      selectedFileQuality = null;
-      updateQualityGateStatus({ status: "pending", message: "Mengecek dimensi file..." });
-      evaluateClientQuality(file).then((quality) => {
-        selectedFileQuality = quality;
-        const gate = runClientQualityGate(quality, document.getElementById("document-type").value);
-        updateQualityGateStatus(gate);
-      });
-    }
-
-    fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
-    document.getElementById("document-type").addEventListener("change", () => {
-      if (selectedFileQuality) {
-        updateQualityGateStatus(runClientQualityGate(selectedFileQuality, document.getElementById("document-type").value));
-      }
-    });
-    dropzone.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      dropzone.classList.add("dragover");
-    });
-    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
-    dropzone.addEventListener("drop", (event) => {
-      event.preventDefault();
-      dropzone.classList.remove("dragover");
-      if (event.dataTransfer.files.length) {
-        fileInput.files = event.dataTransfer.files;
-        setFile(fileInput.files[0]);
-      }
-    });
-
-    resetButton.addEventListener("click", () => {
-      form.reset();
-      preview.style.display = "none";
-      resultBody.style.display = "none";
-      emptyState.style.display = "block";
-      assessmentEl.style.display = "none";
-      reviewBadge.className = "badge";
-      reviewBadge.textContent = "Belum ada hasil";
-      statusEl.textContent = "Pilih gambar untuk mulai.";
-      lastJson = null;
-      lastFile = null;
-      selectedFileQuality = null;
-      stopEnrichmentPolling();
-      enrichmentSection.style.display = "none";
-      aiComparisonSection.style.display = "none";
-      setResultTab("endpoint", false);
-      configureEngineOptions();
-      updateQualityGateStatus({ status: "info", message: "" });
-    });
-
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
+    async function handleFileSelection() {
       const file = fileInput.files[0];
-      if (!file) {
-        statusEl.textContent = "Pilih gambar dulu.";
-        return;
-      }
+      if (!file) return;
+      setPreview(file);
+      await runOcr(file);
+    }
 
-      const documentType = document.getElementById("document-type").value;
-      const engineType = engineSelect.value;
-      const vpsApiKey = document.getElementById("vps-api-key").value.trim();
-      lastFile = file;
-      lastDocumentType = documentType;
-      lastEngineType = engineType;
-      lastVpsApiKey = vpsApiKey;
-      let comparisonPromise = null;
+    function setPreview(file) {
+      const url = URL.createObjectURL(file);
+      if (activePreviewUrl) URL.revokeObjectURL(activePreviewUrl);
+      activePreviewUrl = url;
+      resultPreviewImg.src = url;
+      resultPreviewImg.style.display = "block";
+    }
+
+    async function runOcr(file) {
+      const requestId = ++activeRequestId;
+      clearRenderedResult();
+      liveStatus.textContent = "OCR sedang berjalan.";
+      setSummaryStatus("processing");
+      document.getElementById("summary-processing-time").textContent = "-";
 
       try {
-        if (qualityGate?.checked) {
-          selectedFileQuality = selectedFileQuality || await evaluateClientQuality(file);
-          const gate = runClientQualityGate(selectedFileQuality, documentType);
-          updateQualityGateStatus(gate);
-          if (!gate.allowed) {
-            clearRenderedResult(gate.message);
-            statusEl.textContent = gate.message;
-            reviewBadge.className = "badge warn";
-            reviewBadge.textContent = "Quality gate";
-            return;
-          }
-        }
-
-        const endpoint = endpointFor(documentType, engineType);
-        const shouldCompare = Boolean(compareOpenclaw?.checked);
-        if ((engineType.startsWith("vps-") || shouldCompare) && !vpsApiKey) {
-          throw new Error("Isi VPS API Key dulu untuk engine VPS atau pembanding OpenClaw.");
-        }
-
-        submitButton.disabled = true;
-        statusEl.textContent = "OCR sedang berjalan. Tunggu sampai selesai.";
-        clearRenderedResult("OCR sedang berjalan.");
-        if (shouldCompare) {
-          renderAiComparisonPending();
-          comparisonPromise = runOpenClawComparison(file, documentType, vpsApiKey);
-        }
-
         const body = new FormData();
         body.append("file", file);
-        statusEl.textContent = `Mengirim ke ${endpoint}`;
+
         const requestStarted = performance.now();
-        const response = await fetch(endpoint, {
-          method: "POST",
-          body,
-          headers: engineType.startsWith("vps-") ? { "X-VPS-API-Key": vpsApiKey } : {}
-        });
+        const response = await fetch(DEFAULT_ENDPOINT, { method: "POST", body });
         const roundtripMs = performance.now() - requestStarted;
         const data = await parseJsonResponse(response, "OCR gagal");
         if (!response.ok) throw new Error(data.detail || "OCR gagal.");
+        if (requestId !== activeRequestId) return;
+
         renderResult(data, roundtripMs);
-        statusEl.textContent = comparisonPromise ? "PaddleOCR selesai. Menunggu pembanding OpenClaw." : "OCR selesai.";
-        if (comparisonPromise) {
-          try {
-            const comparison = await comparisonPromise;
-            renderAiComparisonResult(comparison.data, comparison.roundtripMs);
-            statusEl.textContent = "OCR selesai. Hasil PaddleOCR dan OpenClaw sudah tampil.";
-          } catch (comparisonError) {
-            renderAiComparisonError(comparisonError.message);
-            statusEl.textContent = `PaddleOCR selesai. Pembanding OpenClaw gagal: ${comparisonError.message}`;
-          }
-        }
+        liveStatus.textContent = "OCR selesai.";
       } catch (error) {
-        if (comparisonPromise) comparisonPromise.catch(() => undefined);
-        clearRenderedResult(error.message);
-        statusEl.textContent = error.message;
-        reviewBadge.className = "badge warn";
-        reviewBadge.textContent = "Gagal";
-      } finally {
-        submitButton.disabled = false;
+        if (requestId !== activeRequestId) return;
+        renderError(error.message);
       }
-    });
-
-    function endpointFor(documentType, engineType) {
-      if (engineType === "vps-local") {
-        if (documentType === "KTP") return "/ocr/vps/ktp?mode=fast";
-        if (documentType === "STNK") return "/ocr/vps/stnk?mode=fast";
-        return `/ocr/vps?document_type=${encodeURIComponent(documentType)}&mode=fast`;
-      }
-      if (documentType === "KTP") return "/ocr/ktp?mode=fast";
-      if (documentType === "STNK") return "/ocr/stnk?mode=fast";
-      return `/ocr?document_type=${encodeURIComponent(documentType)}&mode=fast`;
-    }
-
-    function configureEngineOptions() {
-      if (isLocalRuntime()) return;
-      const localOption = engineSelect.querySelector('option[value="local"]');
-      if (localOption) localOption.remove();
-      engineSelect.value = "vps-local";
-      lastEngineType = "vps-local";
-    }
-
-    function isLocalRuntime() {
-      return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-    }
-
-    function comparisonEndpointFor(documentType) {
-      if (documentType === "KTP") return "/ocr/vps/agent/ktp";
-      if (documentType === "STNK") return "/ocr/vps/agent/stnk";
-      return `/ocr/vps/agent?document_type=${encodeURIComponent(documentType)}`;
-    }
-
-    async function runOpenClawComparison(file, documentType, vpsApiKey) {
-      const body = new FormData();
-      body.append("file", file);
-      const requestStarted = performance.now();
-      const response = await fetch(comparisonEndpointFor(documentType), {
-        method: "POST",
-        body,
-        headers: { "X-VPS-API-Key": vpsApiKey }
-      });
-      const roundtripMs = performance.now() - requestStarted;
-      const data = await parseJsonResponse(response, "OpenClaw comparison gagal");
-      if (!response.ok) throw new Error(data.detail || "OpenClaw comparison gagal.");
-      return { data, roundtripMs };
     }
 
     async function parseJsonResponse(response, fallbackMessage) {
@@ -927,151 +412,70 @@ def frontend_html() -> str:
       }
     }
 
-    async function evaluateClientQuality(file) {
-      if (!file.type.startsWith("image/")) {
-        return { kind: "non_image", allowed: true, message: "Quality gate browser dilewati untuk PDF. Backend tetap mengecek kualitas hasil OCR." };
-      }
-      const dimensions = await imageDimensions(file);
-      return { kind: "image", width: dimensions.width, height: dimensions.height };
-    }
-
-    function imageDimensions(file) {
-      return new Promise((resolve) => {
-        const url = URL.createObjectURL(file);
-        const image = new Image();
-        image.onload = () => {
-          URL.revokeObjectURL(url);
-          resolve({ width: image.naturalWidth, height: image.naturalHeight });
-        };
-        image.onerror = () => {
-          URL.revokeObjectURL(url);
-          resolve({ width: 0, height: 0 });
-        };
-        image.src = url;
-      });
-    }
-
-    function runClientQualityGate(quality, documentType) {
-      if (!quality || quality.status === "pending") {
-        return { allowed: true, status: "info", message: "Quality gate belum punya data dimensi." };
-      }
-      if (quality.kind !== "image") {
-        return { allowed: true, status: "info", message: quality.message };
-      }
-      const width = quality.width || 0;
-      const height = quality.height || 0;
-      const minWidth = documentType === "STNK" ? 1000 : 900;
-      const minHeight = documentType === "STNK" ? 650 : 500;
-      const warnings = [];
-      if (!width || !height) warnings.push("gambar tidak bisa dibaca browser");
-      if (width < minWidth || height < minHeight) warnings.push(`resolusi ${width}x${height}, target minimal ${minWidth}x${minHeight}`);
-      if (documentType === "STNK" && height > width) warnings.push("STNK sebaiknya landscape dan full frame");
-      if (warnings.length) {
-        return {
-          allowed: false,
-          status: "bad",
-          message: `Quality gate menahan OCR: ${warnings.join("; ")}. Untuk sales frontend, minta user foto ulang lebih dekat dan lurus.`
-        };
-      }
-      return { allowed: true, status: "ok", message: `Quality gate OK: ${width}x${height}.` };
-    }
-
-    function updateQualityGateStatus(gate) {
-      if (!qualityGateStatus) return;
-      qualityGateStatus.className = `quality-hint ${gate.status === "bad" ? "bad" : gate.status === "warn" ? "warn" : ""}`.trim();
-      qualityGateStatus.textContent = gate.message || "";
-    }
-
-    function clearRenderedResult(message) {
-      stopEnrichmentPolling();
-      resultBody.style.display = "none";
-      emptyState.style.display = "block";
-      emptyState.textContent = message || "Hasil akan muncul setelah OCR selesai.";
-      assessmentEl.style.display = "none";
-      warningsEl.style.display = "none";
-      enrichmentSection.style.display = "none";
-      aiComparisonSection.style.display = "none";
-      aiComparisonFieldsBody.innerHTML = "";
-      aiComparisonJson.textContent = "";
+    function clearRenderedResult() {
+      fieldsWrap.style.display = "none";
       fieldsBody.innerHTML = "";
-      rawOcr.textContent = "";
+      assessmentEl.style.display = "none";
+      assessmentEl.textContent = "";
+      assessmentEl.className = "notice";
+      rawJsonDetails.style.display = "none";
       rawJson.textContent = "";
-      itOutputDetails.style.display = "none";
-      itOutputJson.textContent = "";
+      copyRow.style.display = "none";
+      document.getElementById("summary-type").textContent = "-";
+      setSummaryStatus("");
+      document.getElementById("summary-processing-time").textContent = "-";
       lastJson = null;
-      setResultTab("endpoint", false);
+    }
+
+    function renderError(message) {
+      clearRenderedResult();
+      setSummaryStatus("failed");
+      assessmentEl.style.display = "block";
+      assessmentEl.className = "notice bad";
+      assessmentEl.textContent = message;
+      liveStatus.textContent = message;
     }
 
     function renderResult(data, roundtripMs) {
-      stopEnrichmentPolling();
       lastJson = data;
-      emptyState.style.display = "none";
-      resultBody.style.display = "block";
-      setResultTab("endpoint", false);
-      document.getElementById("initial-status").textContent = `Muncul awal dalam ${formatMs(roundtripMs)}`;
-      const input_assessment = data.input_assessment || {};
-      const decision = input_assessment.decision || (data.needs_review ? "needs_review" : "approved_for_auto");
-      reviewBadge.className = decision === "rejected_input" ? "badge bad" : decision === "needs_review" ? "badge warn" : "badge ok";
-      reviewBadge.textContent = decision === "rejected_input" ? "Rejected input" : decision === "needs_review" ? "Needs review" : "Approved";
+      const inputAssessment = data.input_assessment || {};
+      const decision = inputAssessment.decision || (data.needs_review ? "needs_review" : "approved_for_auto");
+
       document.getElementById("summary-type").textContent = data.document_type || "-";
-      document.getElementById("summary-tokens").textContent = data.ocr?.token_count ?? "-";
-      document.getElementById("summary-retry").textContent = data.ocr?.preprocess?.retry_count ?? "-";
-      document.getElementById("summary-resolution").textContent = data.ocr?.preprocess?.selected_max_side ?? "-";
-      document.getElementById("summary-warnings").textContent = (data.warnings || []).length;
-      document.getElementById("summary-decision").textContent = decision;
-      document.getElementById("summary-engine-used").textContent = data.agent?.provider || data.ocr?.provider || "-";
-      document.getElementById("summary-auto-publish").textContent = input_assessment.can_auto_publish ? "Yes" : "No";
-      const timings = data.ocr?.timings || {};
-      const selectedAttempt = selectedTimingAttempt(timings);
-      document.getElementById("summary-pipeline-time").textContent = formatMs(timings.total_ms);
-      document.getElementById("summary-ocr-time").textContent = formatMs(selectedAttempt.ocr_ms);
-      document.getElementById("summary-prepare-time").textContent = formatMs(selectedAttempt.prepare_ms);
-      document.getElementById("summary-quality-time").textContent = formatMs(selectedAttempt.quality_ms);
-      document.getElementById("summary-roundtrip-time").textContent = formatMs(roundtripMs);
+      setSummaryStatus(decision);
+      document.getElementById("summary-processing-time").textContent = formatMs(data.processing_time_ms ?? roundtripMs);
 
-      const assessmentReasons = input_assessment.reason_codes || [];
-      assessmentEl.style.display = input_assessment.message || assessmentReasons.length ? "block" : "none";
-      assessmentEl.className = decision === "rejected_input" ? "assessment rejected" : decision === "needs_review" ? "assessment review" : "assessment";
-      assessmentEl.textContent = [
-        input_assessment.message || "",
-        assessmentReasons.length ? `Reasons: ${assessmentReasons.join(", ")}` : ""
-      ].filter(Boolean).join(" ");
-
+      const reasonCodes = inputAssessment.reason_codes || [];
       const warnings = data.warnings || [];
-      const isProcessingTimeout = warnings.includes("processing_timeout");
-      if (isProcessingTimeout) {
-        document.getElementById("initial-status").textContent = "OCR masih berjalan di background";
-        reviewBadge.className = "badge warn";
-        reviewBadge.textContent = "Processing";
+      const showAssessment = decision !== "approved_for_auto" || reasonCodes.length || warnings.length;
+      const messages = showAssessment
+        ? [inputAssessment.message || "", reasonCodes.length ? `Reasons: ${reasonCodes.join(", ")}` : "", warnings.length ? `Warnings: ${warnings.join(", ")}` : ""].filter(Boolean)
+        : [];
+      if (messages.length) {
         assessmentEl.style.display = "block";
-        assessmentEl.className = "assessment review";
-        assessmentEl.textContent = "OCR melewati batas tunggu checkout. Hasil awal belum berisi field OCR; proses yang sama tetap berjalan di background sampai selesai.";
+        assessmentEl.className = decision === "rejected_input" ? "notice bad" : decision === "needs_review" ? "notice warn" : "notice";
+        assessmentEl.textContent = messages.join(" ");
       }
-      warningsEl.style.display = warnings.length ? "block" : "none";
-      warningsEl.textContent = warnings.length ? warnings.join(", ") : "";
 
       fieldsBody.innerHTML = "";
-      if (isProcessingTimeout) {
-        const row = document.createElement("tr");
-        row.innerHTML = '<td colspan="4" class="value">Hasil awal belum berisi field OCR. OCR yang sama tetap berjalan di background.</td>';
+      orderedFieldEntries(data).forEach(([key, field]) => {
+        const row = document.createElement("div");
+        row.className = "field-row";
+        const note = fieldNote(field);
+        row.innerHTML = `
+          <div class="field-name">${escapeHtml(fieldLabel(key))}</div>
+          <div>
+            <div class="field-value">${escapeHtml(fieldValue(field))}</div>
+            ${note ? `<div class="field-note">${escapeHtml(note)}</div>` : ""}
+          </div>
+        `;
         fieldsBody.appendChild(row);
-      } else {
-        orderedFieldEntries(data).forEach(([key, field]) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${escapeHtml(key)}</td>
-            <td class="value">${escapeHtml(field.value || "-")}</td>
-            <td><span class="field-status ${escapeHtml(field.status || "")}">${escapeHtml(field.status || "-")}</span></td>
-            <td class="confidence">${Number(field.confidence || 0).toFixed(2)}</td>
-          `;
-          fieldsBody.appendChild(row);
-        });
-      }
+      });
+      fieldsWrap.style.display = fieldsBody.children.length ? "block" : "none";
 
-      rawOcr.textContent = data.ocr?.raw_text_masked || "";
+      rawJsonDetails.style.display = "block";
+      copyRow.style.display = "flex";
       rawJson.textContent = JSON.stringify(data, null, 2);
-      renderItOutput(data.ti_compatible);
-      renderEnrichmentPending(data.enrichment || data.background_full_ocr);
     }
 
     function orderedFieldEntries(data) {
@@ -1091,140 +495,54 @@ def frontend_html() -> str:
       return entries;
     }
 
-    function renderItOutput(payload) {
-      if (!payload) {
-        itOutputDetails.style.display = "none";
-        itOutputJson.textContent = "";
-        return;
-      }
-      itOutputDetails.style.display = "block";
-      itOutputJson.textContent = JSON.stringify(payload, null, 2);
+    function setSummaryStatus(decision) {
+      const statusEl = document.getElementById("summary-status");
+      statusEl.className = `value-pill ${decisionClass(decision)}`;
+      statusEl.textContent = decisionLabel(decision);
     }
 
-    function setResultTab(tab, fullAvailable) {
-      const showFull = tab === "full" && fullAvailable;
-      initialSectionDisplay(!showFull);
-      enrichmentSection.style.display = showFull ? "block" : "none";
+    function decisionLabel(decision) {
+      if (decision === "approved_for_auto") return "Lolos";
+      if (decision === "needs_review") return "Perlu review";
+      if (decision === "rejected_input") return "Ditolak";
+      if (decision === "processing") return "Memproses";
+      if (decision === "failed") return "Gagal";
+      return "-";
     }
 
-    function initialSectionDisplay(visible) {
-      document.getElementById("initial-section").style.display = visible ? "block" : "none";
+    function decisionClass(decision) {
+      if (decision === "approved_for_auto") return "ok";
+      if (decision === "needs_review" || decision === "processing") return "warn";
+      if (decision === "rejected_input" || decision === "failed") return "bad";
+      return "";
     }
 
-    function renderAiComparisonPending() {
-      aiComparisonSection.style.display = "block";
-      document.getElementById("ai-comparison-status").textContent = "Menunggu VPS OpenClaw";
-      document.getElementById("ai-comparison-provider").textContent = "openclaw";
-      document.getElementById("ai-comparison-roundtrip").textContent = "-";
-      document.getElementById("ai-comparison-processing-time").textContent = "-";
-      document.getElementById("ai-comparison-decision").textContent = "-";
-      aiComparisonFieldsBody.innerHTML = '<tr><td colspan="5" class="value">Pembanding OpenClaw sedang berjalan.</td></tr>';
-      aiComparisonJson.textContent = "";
+    function fieldLabel(key) {
+      return FIELD_LABELS[key] || key.replaceAll("_", " ").replace(/\\b\\w/g, (char) => char.toUpperCase());
     }
 
-    function renderAiComparisonResult(data, roundtripMs) {
-      aiComparisonSection.style.display = "block";
-      const assessment = data.input_assessment || {};
-      document.getElementById("ai-comparison-status").textContent = "OpenClaw selesai";
-      document.getElementById("ai-comparison-provider").textContent = data.agent?.provider || data.ocr?.provider || "openclaw";
-      document.getElementById("ai-comparison-roundtrip").textContent = formatMs(roundtripMs);
-      document.getElementById("ai-comparison-processing-time").textContent = formatMs(data.processing_time_ms);
-      document.getElementById("ai-comparison-decision").textContent = assessment.decision || (data.needs_review ? "needs_review" : "-");
-      aiComparisonFieldsBody.innerHTML = "";
-      const rows = buildFieldComparisonRows(lastJson, data);
-      if (!rows.length) {
-        const row = document.createElement("tr");
-        row.innerHTML = '<td colspan="5" class="value">Tidak ada field untuk dibandingkan.</td>';
-        aiComparisonFieldsBody.appendChild(row);
-      }
-      rows.forEach((comparison) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${escapeHtml(comparison.key)}</td>
-          <td class="value">${renderFieldComparisonCell(comparison.paddle)}</td>
-          <td class="value">${renderFieldComparisonCell(comparison.openclaw)}</td>
-          <td><span class="match-indicator ${comparison.matches ? "" : "diff"}">${comparison.matches ? "✓" : "×"}</span></td>
-          <td class="difference-note">${escapeHtml(comparison.note)}</td>
-        `;
-        aiComparisonFieldsBody.appendChild(row);
-      });
-      aiComparisonJson.textContent = JSON.stringify(data, null, 2);
-    }
-
-    function renderAiComparisonError(message) {
-      aiComparisonSection.style.display = "block";
-      document.getElementById("ai-comparison-status").textContent = "OpenClaw gagal";
-      document.getElementById("ai-comparison-provider").textContent = "openclaw";
-      document.getElementById("ai-comparison-roundtrip").textContent = "-";
-      document.getElementById("ai-comparison-processing-time").textContent = "-";
-      document.getElementById("ai-comparison-decision").textContent = "error";
-      aiComparisonFieldsBody.innerHTML = `<tr><td colspan="5" class="value">${escapeHtml(message)}</td></tr>`;
-      aiComparisonJson.textContent = JSON.stringify({ error: message }, null, 2);
-    }
-
-    function buildFieldComparisonRows(paddleData, openClawData) {
-      const paddleFields = paddleData?.fields || {};
-      const openClawFields = openClawData?.fields || {};
-      const keys = Array.from(new Set([...Object.keys(paddleFields), ...Object.keys(openClawFields)]));
-      return keys.map((key) => {
-        const paddle = paddleFields[key] || {};
-        const openclaw = openClawFields[key] || {};
-        const matches = fieldValuesMatch(paddle, openclaw);
-        return {
-          key,
-          paddle,
-          openclaw,
-          matches,
-          note: comparisonNote(paddle, openclaw, matches)
-        };
-      });
-    }
-
-    function renderFieldComparisonCell(field) {
-      const value = fieldDisplayValue(field);
-      const meta = fieldMeta(field);
-      return `${escapeHtml(value)}${meta ? `<div class="value-meta">${escapeHtml(meta)}</div>` : ""}`;
-    }
-
-    function fieldValuesMatch(left, right) {
-      const leftValue = normalizedFieldValue(left);
-      const rightValue = normalizedFieldValue(right);
-      return Boolean(leftValue && rightValue && leftValue === rightValue);
-    }
-
-    function normalizedFieldValue(field) {
-      const value = field?.value;
-      if (value === null || value === undefined) return "";
-      return String(value).normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    }
-
-    function fieldDisplayValue(field) {
+    function fieldValue(field) {
       const value = field?.value;
       if (value === null || value === undefined || value === "") return "-";
       return String(value);
     }
 
-    function fieldMeta(field) {
-      const parts = [];
-      if (field?.status) parts.push(field.status);
-      if (typeof field?.confidence === "number") parts.push(Number(field.confidence).toFixed(2));
-      return parts.join(" | ");
+    function fieldNote(field) {
+      const status = field?.status || "";
+      if (!status || status === "ok") return "";
+      return status === "missing" ? "Belum terbaca" : status === "invalid" ? "Perlu dicek" : status;
     }
 
-    function comparisonNote(paddle, openclaw, matches) {
-      const paddleValue = fieldDisplayValue(paddle);
-      const openClawValue = fieldDisplayValue(openclaw);
-      if (matches) return "Sama setelah normalisasi huruf, spasi, dan tanda baca.";
-      if (paddleValue === "-" && openClawValue === "-") return "Keduanya belum membaca field ini.";
-      if (paddleValue === "-") return `PaddleOCR kosong; OpenClaw membaca ${openClawValue}.`;
-      if (openClawValue === "-") return `OpenClaw kosong; PaddleOCR membaca ${paddleValue}.`;
-      return `PaddleOCR membaca ${paddleValue}; OpenClaw membaca ${openClawValue}.`;
+    function formatMs(value) {
+      if (typeof value !== "number") return "-";
+      if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
+      return `${value.toFixed(0)}ms`;
     }
 
     copyJson.addEventListener("click", async () => {
       if (!lastJson) return;
       await navigator.clipboard.writeText(JSON.stringify(lastJson, null, 2));
-      statusEl.textContent = "JSON disalin ke clipboard.";
+      liveStatus.textContent = "JSON disalin ke clipboard.";
     });
 
     function escapeHtml(value) {
@@ -1235,90 +553,6 @@ def frontend_html() -> str:
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
     }
-
-    function selectedTimingAttempt(timings) {
-      const attempts = timings.attempts || [];
-      if (!attempts.length) return {};
-      const selectedIndex = timings.selected_attempt_index ?? attempts.length - 1;
-      return attempts.find((attempt) => attempt.index === selectedIndex) || attempts[attempts.length - 1] || {};
-    }
-
-    function formatMs(value) {
-      if (typeof value !== "number") return "-";
-      if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
-      return `${value.toFixed(0)}ms`;
-    }
-
-    function renderEnrichmentPending(enrichment) {
-      const status = enrichment?.status || "not_applicable";
-      const fullAvailable = status === "queued" || status === "pending" || status === "completed";
-      enrichmentSection.style.display = fullAvailable ? "block" : "none";
-      enrichmentFieldsBody.innerHTML = "";
-      enrichmentJson.textContent = JSON.stringify(enrichment || {}, null, 2);
-      document.getElementById("enrichment-summary-status").textContent = status;
-      document.getElementById("enrichment-status").textContent = status === "queued" ? "Menunggu hasil background" : status;
-      document.getElementById("enrichment-processing-time").textContent = "-";
-      document.getElementById("enrichment-ocr-time").textContent = "-";
-      document.getElementById("enrichment-decision").textContent = "-";
-      document.getElementById("enrichment-job-id").textContent = enrichment?.job_id || "-";
-      document.getElementById("enrichment-elapsed").textContent = "-";
-      if (status === "queued" && enrichment.job_id) {
-        pollEnrichment(enrichment.job_id, performance.now(), 0);
-      }
-    }
-
-    async function pollEnrichment(jobId, startedAt, attempt) {
-      document.getElementById("enrichment-elapsed").textContent = formatMs(performance.now() - startedAt);
-      try {
-        const response = await fetch(`/ocr/enrichment/${encodeURIComponent(jobId)}`);
-        const data = await parseJsonResponse(response, "Cek enrichment gagal");
-        if (data.status === "completed") {
-          renderEnrichmentResult(data.result, performance.now() - startedAt, jobId);
-          return;
-        }
-      } catch {
-        document.getElementById("enrichment-status").textContent = "Gagal cek enrichment";
-      }
-      enrichmentPollTimer = setTimeout(() => pollEnrichment(jobId, startedAt, attempt + 1), 2000);
-    }
-
-    function renderEnrichmentResult(result, elapsedMs, jobId) {
-      const assessment = result?.input_assessment || {};
-      const timings = result?.ocr?.timings || {};
-      const selectedAttempt = selectedTimingAttempt(timings);
-      document.getElementById("enrichment-summary-status").textContent = result?.status || "completed";
-      document.getElementById("enrichment-status").textContent = "Enrichment selesai";
-      statusEl.textContent = "Enrichment selesai. Gunakan hasil Background Enrichment.";
-      reviewBadge.className = assessment.decision === "approved_for_auto" ? "badge ok" : "badge warn";
-      reviewBadge.textContent = "Enrichment selesai";
-      document.getElementById("enrichment-elapsed").textContent = formatMs(elapsedMs);
-      document.getElementById("enrichment-processing-time").textContent = formatMs(result?.processing_time_ms);
-      document.getElementById("enrichment-ocr-time").textContent = formatMs(selectedAttempt.ocr_ms);
-      document.getElementById("enrichment-decision").textContent = assessment.decision || "-";
-      document.getElementById("enrichment-job-id").textContent = jobId;
-      enrichmentSection.style.display = "block";
-      enrichmentFieldsBody.innerHTML = "";
-      Object.entries(result?.fields || {}).forEach(([key, field]) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${escapeHtml(key)}</td>
-          <td class="value">${escapeHtml(field.value || "-")}</td>
-          <td><span class="field-status ${escapeHtml(field.status || "")}">${escapeHtml(field.status || "-")}</span></td>
-          <td class="confidence">${Number(field.confidence || 0).toFixed(2)}</td>
-        `;
-        enrichmentFieldsBody.appendChild(row);
-      });
-      enrichmentJson.textContent = JSON.stringify(result, null, 2);
-    }
-
-    function stopEnrichmentPolling() {
-      if (enrichmentPollTimer) {
-        clearTimeout(enrichmentPollTimer);
-        enrichmentPollTimer = null;
-      }
-    }
-
-    checkHealth();
   </script>
 </body>
 </html>"""

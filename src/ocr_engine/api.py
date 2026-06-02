@@ -124,6 +124,14 @@ def create_app():
     def health() -> dict:
         return {"status": "ok"}
 
+    @app.post("/ui/ocr")
+    async def ui_ocr_document(
+        file: UploadFile = File(...),
+        document_type: str = Query("AUTO", pattern="^(AUTO|KTP|STNK)$"),
+        mode: str = Query("accurate", pattern="^(fast|accurate)$"),
+    ) -> dict:
+        return await _ocr_document(file, document_type, mode, False)
+
     @app.get("/ocr/enrichment/{job_id}")
     def enrichment_status(job_id: str) -> dict:
         if not job_id.isalnum():

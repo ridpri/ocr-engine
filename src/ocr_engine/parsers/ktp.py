@@ -1514,6 +1514,7 @@ def _normalize_address_value(value: str) -> str:
     cleaned = re.sub(r"^JA\s+(?=[A-Z])", "JL ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bBEND\.?\s+HIUR\b", "BEND. HILIR", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bBALIRESIDENCE\b", "BALI RESIDENCE", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b([A-Z]{4,})(UTARA|SELATAN|BARAT|TIMUR|TENGAH|PUSAT)\b", r"\1 \2", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bIARAT\b", "BARAT", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\b(BLOK|BLK)([A-Z]{1,2})(?=\b|[\s./-]|\d)", r"\1 \2", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"(?<=[A-Z0-9])(?=(?:NO\.?\s*\d|RT\b|RW\b|BLOK\b|BLK\b|KAV\b|GG\b))", " ", cleaned, flags=re.IGNORECASE)
