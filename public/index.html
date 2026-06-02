@@ -492,6 +492,10 @@
     function renderResult(data, roundtripMs) {
       lastJson = data;
       const inputAssessment = data.input_assessment || {};
+      if (isProcessingTimeout(data)) {
+        renderProcessingTimeout(data, roundtripMs);
+        return;
+      }
       const decision = inputAssessment.decision || (data.needs_review ? "needs_review" : "approved_for_auto");
 
       document.getElementById("summary-type").textContent = data.document_type || "-";
@@ -529,6 +533,57 @@
       rawJsonDetails.style.display = "block";
       copyRow.style.display = "flex";
       rawJson.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function isProcessingTimeout(data) {
+      const reasonCodes = data?.input_assessment?.reason_codes || [];
+      const warnings = data?.warnings || [];
+      return reasonCodes.includes("processing_timeout") || warnings.includes("processing_timeout");
+    }
+
+    function renderProcessingTimeout(data, roundtripMs) {
+      const jobId = data?.enrichment?.job_id;
+      document.getElementById("summary-type").textContent = data.document_type || "-";
+      setSummaryStatus("processing");
+      document.getElementById("summary-processing-time").textContent = formatMs(data.processing_time_ms ?? roundtripMs);
+      fieldsWrap.style.display = "none";
+      fieldsBody.innerHTML = "";
+      assessmentEl.style.display = "block";
+      assessmentEl.className = "notice warn";
+      assessmentEl.textContent = jobId ? "OCR masih berjalan. Hasil akan muncul otomatis." : "OCR masih berjalan.";
+      rawJsonDetails.style.display = "block";
+      copyRow.style.display = "flex";
+      rawJson.textContent = JSON.stringify(data, null, 2);
+      if (jobId) pollTimedOutResult(jobId, activeRequestId, 0);
+    }
+
+    async function pollTimedOutResult(jobId, requestId, attempt) {
+      if (requestId !== activeRequestId || attempt >= 90) return;
+      await delay(1500);
+      if (requestId !== activeRequestId) return;
+      try {
+        const response = await fetch(`/ocr/enrichment/${encodeURIComponent(jobId)}`);
+        const data = await parseJsonResponse(response, "Polling OCR gagal");
+        if (!response.ok) throw new Error(data.detail || "Polling OCR gagal.");
+        if (requestId !== activeRequestId) return;
+        if (data.status === "completed" && data.result) {
+          renderResult(data.result, data.result.processing_time_ms);
+          liveStatus.textContent = "OCR selesai.";
+          return;
+        }
+        if (data.status === "failed") {
+          throw new Error(data.error || "OCR background gagal.");
+        }
+      } catch (error) {
+        if (requestId !== activeRequestId) return;
+        renderError(error.message);
+        return;
+      }
+      pollTimedOutResult(jobId, requestId, attempt + 1);
+    }
+
+    function delay(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     function orderedFieldEntries(data) {
