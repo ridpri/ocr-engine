@@ -128,7 +128,7 @@ def create_app():
     async def ui_ocr_document(
         file: UploadFile = File(...),
         document_type: str = Query("AUTO", pattern="^(AUTO|KTP|STNK)$"),
-        mode: str = Query("accurate", pattern="^(fast|accurate)$"),
+        mode: str = Query("fast", pattern="^(fast|accurate)$"),
     ) -> dict:
         return await _ocr_document(file, document_type, mode, False)
 

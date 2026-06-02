@@ -418,7 +418,7 @@ def frontend_html() -> str:
     }
 
     function ocrEndpoint() {
-      return `/ui/ocr?document_type=${encodeURIComponent(selectedDocumentType)}&mode=accurate`;
+      return `/ui/ocr?document_type=${encodeURIComponent(selectedDocumentType)}&mode=fast`;
     }
 
     function setPreview(file) {

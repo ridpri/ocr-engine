@@ -33,6 +33,7 @@ class FrontendTests(unittest.TestCase):
         self.assertIn("renderDocumentTabs", html)
         self.assertIn("ocrEndpoint()", html)
         self.assertIn("document_type=${encodeURIComponent(selectedDocumentType)}", html)
+        self.assertIn("mode=fast", html)
         self.assertIn('fileInput.addEventListener("change", handleFileSelection);', html)
         self.assertIn('documentTabs.forEach((tab) => tab.addEventListener("click", handleDocumentTabClick));', html)
         self.assertIn("runOcr(file)", html)
