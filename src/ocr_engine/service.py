@@ -45,10 +45,21 @@ STNK_AUTO_APPROVAL_FIELDS = (
     "nomor_mesin",
 )
 STNK_AUTO_MIN_CONFIDENCE = {
-    "nama_pemilik": 0.80,
+    "nomor_polisi": 0.85,
+    "nama_pemilik": 0.75,
 }
 STNK_SUSPICIOUS_FIELD_VALUES = {
-    "nama_pemilik": {"A ALAMAT", "A ALLAMAT", "A LAMAT", "ALAMAT", "ALLAMAT", "LAMAT", "NAMA PEMILIK"},
+    "nama_pemilik": {
+        "A ALAMAT",
+        "A ALLAMAT",
+        "A LAMAT",
+        "ALAMAT",
+        "ALLAMAT",
+        "LAMAT",
+        "NAMA PEMILIK",
+        "BN KENDARAAN BARU",
+        "BN. KENDARAAN BARU",
+    },
 }
 STNK_MARKER_PATTERNS = [
     r"SURAT\s+TANDA\s+NOMOR\s+KENDARAAN",

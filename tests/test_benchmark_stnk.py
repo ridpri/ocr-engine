@@ -203,6 +203,34 @@ class BenchmarkStnkTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             self.assertTrue(all(mode == "fast" for _, _, mode in calls))
 
+    def test_benchmark_stnk_can_skip_pdf_inputs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_dir = Path(tmpdir) / "sample_stnk"
+            input_dir.mkdir()
+            output_dir = Path(tmpdir) / "out-images"
+            Image.new("RGB", (1280, 720), "white").save(input_dir / "sample.jpg")
+            (input_dir / "sample.pdf").write_bytes(b"%PDF-1.4\n")
+
+            calls: list[str] = []
+
+            def fake_process_file(provider, path, document_type, mode="accurate", run_nik_fallback=True):
+                calls.append(path.name)
+                return _fake_stnk_record(path.name, mode=mode)
+
+            with patch("ocr_engine.cli_eval._process_file", side_effect=fake_process_file):
+                rc = benchmark_stnk.main(
+                    [
+                        "--input",
+                        str(input_dir),
+                        "--output-dir",
+                        str(output_dir),
+                        "--skip-pdf",
+                    ]
+                )
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(calls, ["sample.jpg"])
+
 
 if __name__ == "__main__":
     unittest.main()

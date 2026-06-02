@@ -35,6 +35,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["fast", "accurate"],
         help="OCR processing mode.",
     )
+    parser.add_argument("--skip-pdf", action="store_true", help="Ignore PDF files when collecting a folder.")
+    parser.add_argument("--recursive", action="store_true", help="Collect supported files from nested folders too.")
+    parser.add_argument("--random-seed", type=int, help="Shuffle files with a reproducible seed before applying --limit.")
     return parser.parse_args(argv)
 
 
@@ -54,6 +57,9 @@ def run_stnk_benchmark(
     *,
     limit: int | None = None,
     mode: str = "accurate",
+    skip_pdf: bool = False,
+    recursive: bool = False,
+    random_seed: int | None = None,
 ) -> tuple[Path, Path]:
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -76,6 +82,13 @@ def run_stnk_benchmark(
         str(summary_path),
     ]
 
+    if skip_pdf:
+        args.append("--skip-pdf")
+    if recursive:
+        args.append("--recursive")
+    if random_seed is not None:
+        args += ["--random-seed", str(random_seed)]
+
     if limit is not None:
         args += ["--limit", str(limit)]
     else:
@@ -92,7 +105,15 @@ def run_stnk_benchmark(
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    run_stnk_benchmark(args.input, args.output_dir, limit=args.limit, mode=args.mode)
+    run_stnk_benchmark(
+        args.input,
+        args.output_dir,
+        limit=args.limit,
+        mode=args.mode,
+        skip_pdf=args.skip_pdf,
+        recursive=args.recursive,
+        random_seed=args.random_seed,
+    )
     return 0
 
 

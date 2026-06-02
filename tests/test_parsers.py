@@ -3453,6 +3453,68 @@ class StnkParserTests(unittest.TestCase):
         self.assertEqual(result.fields["nomor_rangka"].value, "JM6DK2W7AH0301954")
         self.assertEqual(result.fields["nomor_mesin"].value, "PE31023038")
 
+    def test_parse_stnk_official_layout_ignores_bilingual_noise_values(self):
+        raw_text = """
+        SURAT TANDA NOMOR KENDARAAN BERMOTOR
+        VEHICLE REGISTRATION CERTIFICATE
+        NOMOR REGISTRASI
+        VEHICLE REGISTRATION NUMBER
+        B.1901 DZW
+        NIK/TDP/NIB-KITAS/KITAP:
+        NAMA PEMILIK
+        COMPANY REGISTRATION NUMBER
+        31740160
+        NAME OF OWNER
+        MEIGA PRANURAINI
+        ALAMAT
+        031
+        ADDRES
+        JL TEBET UTARA II C/14 RT4/1
+        JAKSEL
+        MERK
+        WARNA
+        BN.KENDARAAN BA
+        SUZUKI
+        PUTIH METALIK
+        TIPE E
+        PQ5FX 4X2 AT
+        JENIS
+        CATEGORY
+        MOBIL PENUMPANG
+        BAHAN BAKAR/SUMBER ENERGI:
+        TYPE FUEL/ENERGY SOU
+        BENSIN
+        MICRO/MINIBUS
+        TAHUN PEMBUATAN
+        MANUFACTURE YEAR
+        2024
+        TAHUN REGISTRASI
+        :2025
+        NOMOR BPKB
+        V03837765
+        NOMOR RANGKA/NIK/VIN :
+        MA3TYKL1SRT103870
+        NO URUT PENDAFTARAN
+        0024/A32/300125
+        NOMOR MESIN
+        K15CN7469747
+        BERLAKU SAMPALDATE OF EXPIRE
+        30-01-2030
+        """
+
+        result = parse_stnk_text(raw_text)
+
+        self.assertEqual(result.fields["nomor_polisi"].value, "B 1901 DZW")
+        self.assertEqual(result.fields["nama_pemilik"].value, "MEIGA PRANURAINI")
+        self.assertEqual(result.fields["alamat"].value, "JL TEBET UTARA II C/14 RT4/1 JAKSEL")
+        self.assertEqual(result.fields["merek"].value, "SUZUKI")
+        self.assertEqual(result.fields["tipe"].value, "PQ5FX 4X2 AT")
+        self.assertEqual(result.fields["jenis"].value, "MOBIL PENUMPANG")
+        self.assertEqual(result.fields["tahun_pembuatan"].value, "2024")
+        self.assertEqual(result.fields["nomor_rangka"].value, "MA3TYKL1SRT103870")
+        self.assertEqual(result.fields["nomor_mesin"].value, "K15CN7469747")
+        self.assertEqual(result.fields["berlaku_sampai"].value, "30-01-2030")
+
     def test_parse_stnk_repairs_owner_plate_and_vehicle_id_from_tax_receipt(self):
         raw_text = """
         TANDA BUKTI PELUNASAN KEWAJIBAN PEMBAYARAN

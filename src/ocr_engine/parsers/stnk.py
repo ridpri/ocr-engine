@@ -14,12 +14,12 @@ STNK_LABELS: dict[str, list[str]] = {
     "alamat": ["ALAMAT", "Alamat"],
     "merek": ["MERK", "Merek", "MEREK"],
     "tipe": ["TYPE", "TIPE", "Type", "Tipe"],
-    "jenis": ["JENIS", "Jenis"],
+    "jenis": ["JENIS", "JENS", "BENIS", "Jenis"],
     "tahun_pembuatan": ["TAHUN PEMBUATAN", "Tahun Pembuatan", "Tahun"],
     "warna": ["WARNA", "Warna"],
     "nomor_rangka": ["NO RANGKA", "NO. RANGKA", "NO.RANGKA", "NOMOR RANGKA", "Nomor Rangka", "No Rangka"],
     "nomor_mesin": ["NO MESIN", "NO. MESIN", "NO.MESIN", "NOMOR MESIN", "Nomor Mesin", "No Mesin"],
-    "bahan_bakar": ["BAHAN BAKAR", "Bahan Bakar"],
+    "bahan_bakar": ["BAHAN BAKAR", "BAHAN BAGAR", "BAWAN BAKAR", "MAHAN BAKAR", "BARN BAAR", "Bahan Bakar"],
     "berlaku_sampai": ["BERLAKU SAMPAI", "Berlaku Sampai", "Berlaku"],
 }
 
@@ -32,6 +32,10 @@ STNK_VALUE_NOISE = {
     "BERLA",
     "DATEOFEXPIRE",
     "DATE OF EXPIRE",
+    "CATEGORY",
+    "COMPANY REGISTRATION NUMBER",
+    "FUEL ENERGY SOURCES",
+    "FUEL/ENERGY SOURCES",
     "IDENT",
     "KB",
     "LAMA",
@@ -45,6 +49,8 @@ STNK_VALUE_NOISE = {
     "S/D",
     "SID",
     "TNKB",
+    "BN.KENDARAAN",
+    "BN KENDARAAN",
 }
 PERSON_NOISE_WORDS = {
     "ALAMAT",
@@ -216,6 +222,18 @@ def parse_stnk_text(raw_text: str) -> DocumentResult:
             fields[field_name] = _vehicle_id_field(value, raw, min_length=5, allow_numeric=True)
         elif field_name == "tahun_pembuatan":
             fields[field_name] = _year_field(value, raw)
+        elif field_name == "nama_pemilik":
+            fields[field_name] = _owner_field(value, raw)
+        elif field_name == "alamat":
+            fields[field_name] = _address_field(value, raw)
+        elif field_name == "jenis":
+            fields[field_name] = _vehicle_category_field(value, raw)
+        elif field_name == "warna":
+            fields[field_name] = _color_field(value, raw)
+        elif field_name == "bahan_bakar":
+            fields[field_name] = _fuel_field(value, raw)
+        elif field_name == "berlaku_sampai":
+            fields[field_name] = _expiry_field(value, raw)
         else:
             fields[field_name] = make_ok(value, raw=raw) if value else make_missing()
 
@@ -246,8 +264,60 @@ def _plate_field(value: str | None, raw: str | None) -> FieldResult:
         return make_invalid(value, raw=raw)
     normalized = _normalize_stnk_plate(value)
     if normalized:
-        return FieldResult(value=normalized, confidence=0.95, status="ok", evidence=[normalized], raw=raw)
+        confidence = 0.95 if _plate_has_suffix(normalized) else 0.80
+        return FieldResult(value=normalized, confidence=confidence, status="ok", evidence=[normalized], raw=raw)
     return make_invalid(value, raw=raw)
+
+
+def _owner_field(value: str | None, raw: str | None) -> FieldResult:
+    if not value:
+        return make_missing()
+    cleaned = _normalize_owner_candidate(value)
+    if _is_official_noise_value(cleaned) or not _looks_like_owner_name_after_label(cleaned):
+        return make_missing()
+    return make_ok(cleaned, confidence=0.88, raw=raw)
+
+
+def _address_field(value: str | None, raw: str | None) -> FieldResult:
+    if not value:
+        return make_missing()
+    cleaned = collapse_spaces(value.strip(" :.-"))
+    if _looks_like_amount(cleaned) or _is_official_noise_value(cleaned) or not _looks_like_address_value(cleaned):
+        return make_missing()
+    return make_ok(cleaned, confidence=0.88, raw=raw)
+
+
+def _vehicle_category_field(value: str | None, raw: str | None) -> FieldResult:
+    if not value:
+        return make_missing()
+    category = _normalize_vehicle_category(value)
+    return make_ok(category, confidence=0.88, raw=raw) if category else make_missing()
+
+
+def _color_field(value: str | None, raw: str | None) -> FieldResult:
+    if not value:
+        return make_missing()
+    color = _normalize_vehicle_color(value)
+    return make_ok(color, confidence=0.88, raw=raw) if color else make_missing()
+
+
+def _fuel_field(value: str | None, raw: str | None) -> FieldResult:
+    if not value:
+        return make_missing()
+    fuel = _extract_fuel_value_from_line(value)
+    return make_ok(fuel, confidence=0.88, raw=raw) if fuel else make_missing()
+
+
+def _expiry_field(value: str | None, raw: str | None) -> FieldResult:
+    if not value:
+        return make_missing()
+    text_expiry = _normalize_expiry_date_text(value)
+    if text_expiry:
+        return make_ok(text_expiry, confidence=0.88, raw=raw)
+    match = re.search(r"\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b", value)
+    if match:
+        return make_ok(match.group(0), confidence=0.88, raw=raw)
+    return make_missing()
 
 
 def _vehicle_id_field(value: str | None, raw: str | None, min_length: int, allow_numeric: bool) -> FieldResult:
@@ -422,7 +492,7 @@ def _apply_stnk_fallbacks(raw_text: str, fields: dict[str, FieldResult]) -> None
                 raw="fallback:year_scan",
             )
 
-    if _is_noise_value(fields["warna"].value or ""):
+    if fields["warna"].status != "ok" or _is_noise_value(fields["warna"].value or ""):
         color = _section_color_value(lines)
         if color:
             fields["warna"] = make_ok(color, confidence=0.78, raw="fallback:color_scan")
@@ -495,6 +565,10 @@ def _apply_official_stnk_section_overrides(raw_text: str, fields: dict[str, Fiel
     owner = _section_owner(section)
     if owner and _should_apply_official_override(fields["nama_pemilik"]):
         fields["nama_pemilik"] = make_ok(owner, confidence=0.9, raw="official_section:nama_pemilik")
+
+    address = _section_address(section)
+    if address and _should_apply_official_text_override(fields["alamat"]):
+        fields["alamat"] = make_ok(address, confidence=0.88, raw="official_section:alamat")
 
     company_owner = _fallback_company_owner(normalized_lines(raw_text))
     if company_owner and not _looks_like_company_name(fields["nama_pemilik"].value or ""):
@@ -571,7 +645,18 @@ def _should_apply_official_override(field: FieldResult) -> bool:
         or field.raw.startswith("fallback:")
         or len(value.strip()) <= 1
         or _is_noise_value(value)
+        or _is_official_noise_value(value)
         or _is_broken_official_capture(value)
+    )
+
+
+def _should_apply_official_text_override(field: FieldResult) -> bool:
+    value = collapse_spaces((field.value or "").upper())
+    return (
+        _should_apply_official_override(field)
+        or len(value) <= 4
+        or not re.search(r"[A-Z]", value)
+        or _is_official_noise_value(value)
     )
 
 
@@ -621,8 +706,43 @@ def _is_vehicle_brand_candidate(value: str) -> bool:
     return (
         bool(re.fullmatch(r"[A-Z0-9]{2,12}", candidate))
         and not _is_noise_value(candidate)
+        and not _is_official_noise_value(candidate)
         and not _extract_fuel_value_from_line(candidate)
         and not _normalize_vehicle_color(candidate)
+    )
+
+
+def _section_address(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines):
+        if not re.search(r"\b(?:ALAMAT|ADDRESS|ADDRES)\b", line, flags=re.IGNORECASE):
+            continue
+        parts: list[str] = []
+        for candidate in _window(lines, index + 1, index + 8):
+            cleaned = collapse_spaces(candidate.strip(" :.-"))
+            if not cleaned:
+                continue
+            if _is_section_label(cleaned) and not re.search(r"\b(?:JL|JALAN|RT|RW|KEL|KEC)\b", cleaned, flags=re.IGNORECASE):
+                break
+            if _is_official_noise_value(cleaned) or _looks_like_amount(cleaned):
+                continue
+            if _looks_like_address_value(cleaned):
+                parts.append(cleaned)
+                continue
+            if parts and re.search(r"\b(?:JAKSEL|JAKARTA|BANDUNG|TANGERANG|BEKASI|BOGOR|DEPOK)\b", cleaned, flags=re.IGNORECASE):
+                parts.append(cleaned)
+                break
+        if parts:
+            return collapse_spaces(" ".join(parts))
+    return None
+
+
+def _looks_like_address_value(value: str) -> bool:
+    upper = value.upper()
+    if len(upper) <= 4:
+        return False
+    return bool(
+        re.search(r"\b(?:JL|JALAN|GG|GANG|RT|RW|KEL|KEC|BLOK|NO\.?|RAYA)\b", upper)
+        or re.search(r"\d+/\d+", upper)
     )
 
 
@@ -788,6 +908,24 @@ def _normalize_vehicle_color(value: str) -> str | None:
     return None
 
 
+def _normalize_vehicle_category(value: str) -> str | None:
+    cleaned = collapse_spaces(re.sub(r"[^A-Z ]+", " ", value.upper()))
+    category_patterns = [
+        ("MOBIL PENUMPANG", r"\bMOBIL\s+PEN[UO]MPA\w*\b"),
+        ("KENDARAAN KHUSUS", r"\bKENDARAAN\s+KHUSUS\b"),
+        ("SEPEDA MOTOR", r"\bSEPEDA\s+MOTOR\b"),
+        ("MOBIL BARANG", r"\bMOBIL\s+BARANG\b"),
+        ("TRUCK", r"\bTRU?C?K\b"),
+        ("MINIBUS", r"\bMINI\s*BUS\b"),
+    ]
+    for normalized, pattern in category_patterns:
+        if re.search(pattern, cleaned):
+            return normalized
+    if cleaned in {"CATEGORY", "JENIS", "BENIS", "JENS"}:
+        return None
+    return None
+
+
 def _official_stnk_section_lines(raw_text: str) -> list[str]:
     lines = normalized_lines(raw_text)
     starts = [
@@ -848,10 +986,15 @@ def _section_simple_value(lines: list[str], label_pattern: str) -> str | None:
         if not match:
             continue
         inline_value = match.group(1).strip()
-        if inline_value and not _is_section_label(inline_value) and not _looks_like_amount(inline_value):
+        if (
+            inline_value
+            and not _is_section_label(inline_value)
+            and not _looks_like_amount(inline_value)
+            and not _is_official_noise_value(inline_value)
+        ):
             return collapse_spaces(inline_value.strip(" :.-"))
         for candidate in _window(lines, index + 1, index + 5):
-            if _is_section_label(candidate) or _looks_like_amount(candidate):
+            if _is_section_label(candidate) or _looks_like_amount(candidate) or _is_official_noise_value(candidate):
                 continue
             cleaned = collapse_spaces(candidate.strip(" :.-"))
             if cleaned and re.search(r"[A-Z]", cleaned, flags=re.IGNORECASE):
@@ -918,7 +1061,10 @@ def _section_vehicle_id(lines: list[str], label_pattern: str, target: str) -> st
         best: tuple[int, str] | None = None
         candidate_lines = [(True, candidate) for candidate in _window(lines, index + 1, index + 7)]
         if target == "mesin":
-            candidate_lines = [(False, candidate) for candidate in reversed(_window(lines, index - 4, index))] + candidate_lines
+            after_label = _best_vehicle_id_candidate(candidate_lines, target)
+            if after_label:
+                return after_label
+            candidate_lines = [(False, candidate) for candidate in reversed(_window(lines, index - 4, index))]
         for is_after_label, candidate_line in candidate_lines:
             if _is_section_label(candidate_line) or _looks_like_amount(candidate_line):
                 continue
@@ -937,6 +1083,26 @@ def _section_vehicle_id(lines: list[str], label_pattern: str, target: str) -> st
         if best:
             return best[1]
     return None
+
+
+def _best_vehicle_id_candidate(candidate_lines: list[tuple[bool, str]], target: str) -> str | None:
+    best: tuple[int, str] | None = None
+    for is_after_label, candidate_line in candidate_lines:
+        if _is_section_label(candidate_line) or _looks_like_amount(candidate_line):
+            continue
+        normalized = _normalize_vehicle_id(candidate_line)
+        if not normalized or _is_noise_value(normalized) or _contains_month_marker(normalized):
+            continue
+        if normalize_plate_number(normalized) or not any(char.isdigit() for char in normalized):
+            continue
+        score = _vehicle_id_score(normalized, target)
+        if score <= 0:
+            continue
+        if target == "mesin" and is_after_label:
+            score += 1
+        if best is None or score > best[0] or (score == best[0] and _prefer_vehicle_id_candidate(normalized, best[1], target)):
+            best = (score, normalized)
+    return best[1] if best else None
 
 
 def _section_expiry_date(lines: list[str]) -> str | None:
@@ -1016,6 +1182,18 @@ def _is_noise_value(value: str) -> bool:
     normalized = collapse_spaces(value.upper().replace(" ", ""))
     spaced = collapse_spaces(value.upper())
     return normalized in {item.replace(" ", "") for item in STNK_VALUE_NOISE} or spaced in STNK_VALUE_NOISE
+
+
+def _is_official_noise_value(value: str) -> bool:
+    compact = re.sub(r"[^A-Z0-9]", "", value.upper())
+    spaced = collapse_spaces(re.sub(r"[^A-Z0-9 ]+", " ", value.upper()))
+    if not compact:
+        return True
+    if compact in {"CATEGORY", "COMPANYREGISTRATIONNUMBER", "FUELENERGYSOURCES", "NAMEOFOWNER", "ADDRESS", "ADDRES", "BRAND"}:
+        return True
+    if compact.startswith("BNKENDARAAN"):
+        return True
+    return spaced in {"CATEGORY", "COMPANY REGISTRATION NUMBER", "FUEL ENERGY SOURCES", "NAME OF OWNER"}
 
 
 def _fallback_plate(lines: list[str]) -> str | None:
@@ -1286,8 +1464,6 @@ def _vehicle_id_score(value: str, target: str) -> int:
             "NOMOR",
             "POLISI",
             "PEMILIK",
-            "RT",
-            "RW",
         ]
     ):
         return 0
@@ -1296,6 +1472,8 @@ def _vehicle_id_score(value: str, target: str) -> int:
     if normalize_plate_number(value):
         return 0
     if target == "mesin" and (value.endswith("RP") or re.search(r"\d{6,}(?:19|20)\d{2}RP$", value)):
+        return 0
+    if target == "mesin" and re.fullmatch(r"B\d{6,}", value):
         return 0
     if value.isdigit() and _normalize_year(value):
         return 0
@@ -1420,6 +1598,11 @@ def _normalize_stnk_plate(value: str | None) -> str | None:
         suffix = match.group(3).translate(suffix_translation)
         return normalize_plate_number(f"B{match.group(2)}{suffix}")
     return None
+
+
+def _plate_has_suffix(value: str) -> bool:
+    compact = re.sub(r"[^A-Z0-9]", "", value.upper())
+    return bool(re.fullmatch(r"[A-Z]{1,2}\d{1,4}[A-Z]{1,3}", compact))
 
 
 def _is_current_plate_label(line: str) -> bool:

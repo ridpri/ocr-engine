@@ -29,7 +29,7 @@ from ocr_engine.service import (
 
 
 STNK_OFFICIAL_ROI_MAX_SIDE = 1200
-STNK_FAST_ROI_MAX_SIDE = 720
+STNK_FAST_ROI_MAX_SIDE = 820
 STNK_FAST_ROI_RIGHT_RATIO = 0.78
 STNK_FULL_PAGE_MAX_SIDE = 1600
 KTP_FAST_MAX_SIDE = 496
@@ -377,7 +377,7 @@ def _first_attempt_strategy(requested_document_type: str | None, processing_mode
     if requested == "KTP" and processing_mode == "fast":
         return "ktp_fast"
     if requested == "STNK" and processing_mode == "fast":
-        return "stnk_fast_roi"
+        return "stnk_official_roi"
     if requested == "STNK":
         return "stnk_official_roi"
     return "full_page"
@@ -386,6 +386,8 @@ def _first_attempt_strategy(requested_document_type: str | None, processing_mode
 def _first_attempt_max_side(requested_document_type: str | None, processing_mode: str, strategy: str) -> int:
     requested = requested_document_type.upper() if requested_document_type else "AUTO"
     if strategy == "stnk_official_roi":
+        if requested == "STNK" and processing_mode == "fast":
+            return _env_int("OCR_STNK_FAST_MAX_SIDE", STNK_FAST_ROI_MAX_SIDE)
         return STNK_OFFICIAL_ROI_MAX_SIDE
     if strategy == "stnk_fast_roi":
         return _env_int("OCR_STNK_FAST_MAX_SIDE", STNK_FAST_ROI_MAX_SIDE)

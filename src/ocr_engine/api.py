@@ -53,7 +53,7 @@ def _env_float(name: str, default: float) -> float:
     return parsed if parsed > 0 else default
 
 
-STNK_FAST_RESPONSE_TIMEOUT_SECONDS = _env_float("STNK_FAST_RESPONSE_TIMEOUT_SECONDS", 12)
+STNK_FAST_RESPONSE_TIMEOUT_SECONDS = _env_float("STNK_FAST_RESPONSE_TIMEOUT_SECONDS", 18)
 STNK_PURCHASE_RESPONSE_TIMEOUT_SECONDS = _env_float("STNK_PURCHASE_RESPONSE_TIMEOUT_SECONDS", 6)
 BACKGROUND_OCR_START_DELAY_SECONDS = _env_float("BACKGROUND_OCR_START_DELAY_SECONDS", 10)
 KTP_PURCHASE_BACKGROUND_START_DELAY_SECONDS = _env_float("KTP_PURCHASE_BACKGROUND_START_DELAY_SECONDS", 45)
@@ -551,7 +551,7 @@ def _ui_force_strategy(document_type: str, mode: str) -> str | None:
     if document == "KTP":
         return "ktp_fast"
     if document == "STNK":
-        return "stnk_fast_roi"
+        return "stnk_official_roi"
     return None
 
 
@@ -801,7 +801,7 @@ def _timeout_strategy(document_type: str, processing_mode: str) -> str:
     if document_type == "KTP" and processing_mode == "fast":
         return "ktp_fast"
     if document_type == "STNK" and processing_mode == "fast":
-        return "stnk_fast_roi"
+        return "stnk_official_roi"
     return "full_page"
 
 

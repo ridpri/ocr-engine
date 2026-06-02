@@ -214,10 +214,10 @@ class MedanKtpProvider:
 
 
 class ApiEndpointTests(unittest.TestCase):
-    def test_stnk_fast_default_checkout_budget_is_twelve_seconds(self):
+    def test_stnk_fast_default_checkout_budget_is_eighteen_seconds(self):
         from ocr_engine.api import STNK_FAST_RESPONSE_TIMEOUT_SECONDS
 
-        self.assertEqual(STNK_FAST_RESPONSE_TIMEOUT_SECONDS, 12)
+        self.assertEqual(STNK_FAST_RESPONSE_TIMEOUT_SECONDS, 18)
 
     def test_ocr_endpoint_requires_api_key_when_configured(self):
         client = _client_with_fake_provider()

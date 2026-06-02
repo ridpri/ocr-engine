@@ -74,7 +74,7 @@ def classify_stnk_record(record: dict[str, Any]) -> tuple[str, list[str]]:
         reasons.append("document_type_unknown")
     elif decision != "approved_for_auto":
         reasons.append("needs_review")
-    if structure_score < WEB_STRUCTURE_SCORE_MIN:
+    if structure_score < WEB_STRUCTURE_SCORE_MIN and missing_required:
         reasons.append("structure_score_below_web_threshold")
     reasons.extend(f"quality:{flag}" for flag in sorted(quality_flags))
 

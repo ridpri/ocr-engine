@@ -286,7 +286,7 @@ class InputAssessmentTests(unittest.TestCase):
         self.assertEqual(assessment["decision"], "approved_for_auto")
         self.assertEqual(assessment["reason_codes"], [])
 
-    def test_stnk_suspicious_low_confidence_owner_needs_review(self):
+    def test_stnk_suspicious_owner_needs_review(self):
         parsed = _stnk_result(
             nomor_polisi="B 2759 KZP",
             nama_pemilik="LAMAT",
@@ -300,8 +300,23 @@ class InputAssessmentTests(unittest.TestCase):
 
         self.assertEqual(assessment["decision"], "needs_review")
         self.assertFalse(assessment["can_auto_publish"])
-        self.assertIn("stnk_auto_low_confidence:nama_pemilik", assessment["reason_codes"])
         self.assertIn("stnk_suspicious_field:nama_pemilik", assessment["reason_codes"])
+
+    def test_stnk_low_confidence_owner_needs_review_below_threshold(self):
+        parsed = _stnk_result(
+            nomor_polisi="B 2759 KZP",
+            nama_pemilik="PT PP PRESISI",
+            tahun_pembuatan="2021",
+            nomor_rangka="MHRGN5880MJ207222",
+            nomor_mesin="L15ZF1008375",
+            nama_pemilik_confidence=0.70,
+        )
+
+        assessment = build_input_assessment("SURAT TANDA NOMOR KENDARAAN", parsed, "STNK", "STNK")
+
+        self.assertEqual(assessment["decision"], "needs_review")
+        self.assertFalse(assessment["can_auto_publish"])
+        self.assertIn("stnk_auto_low_confidence:nama_pemilik", assessment["reason_codes"])
 
     def test_stnk_owner_label_noise_needs_review(self):
         parsed = _stnk_result(

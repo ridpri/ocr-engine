@@ -90,7 +90,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_fast_max_side_can_be_tuned_from_environment(self):
         with patch.dict("os.environ", {"OCR_STNK_FAST_MAX_SIDE": "640", "OCR_KTP_FAST_MAX_SIDE": "496"}):
-            stnk_size = _first_attempt_max_side("STNK", "fast", "stnk_fast_roi")
+            stnk_size = _first_attempt_max_side("STNK", "fast", "stnk_official_roi")
             ktp_size = _first_attempt_max_side("KTP", "fast", "ktp_fast")
 
         self.assertEqual(stnk_size, 640)

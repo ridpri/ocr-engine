@@ -347,6 +347,12 @@
     let activeRequestId = 0;
     let selectedDocumentType = "KTP";
 
+    const UPLOAD_MAX_SIDE = {
+      KTP: 1400,
+      STNK: 1600
+    };
+    const UPLOAD_JPEG_QUALITY = 0.86;
+
     const FIELD_ORDER = {
       KTP: [
         "provinsi", "kabupaten_kota", "nik", "nama", "tempat_tanggal_lahir", "jenis_kelamin",
@@ -428,13 +434,17 @@
     async function runOcr(file) {
       const requestId = ++activeRequestId;
       clearRenderedResult();
-      liveStatus.textContent = "OCR sedang berjalan.";
+      liveStatus.textContent = "Menyiapkan gambar.";
       setSummaryStatus("processing");
       document.getElementById("summary-processing-time").textContent = "-";
 
       try {
+        const uploadFile = await prepareUploadFile(file);
+        if (requestId !== activeRequestId) return;
+        liveStatus.textContent = "OCR sedang berjalan.";
+
         const body = new FormData();
-        body.append("file", file);
+        body.append("file", uploadFile, uploadFile.name || file.name);
 
         const requestStarted = performance.now();
         const response = await fetch(ocrEndpoint(), { method: "POST", body });
@@ -449,6 +459,65 @@
         if (requestId !== activeRequestId) return;
         renderError(error.message);
       }
+    }
+
+    async function prepareUploadFile(file) {
+      if (!file.type || !file.type.startsWith("image/")) return file;
+      if (!window.HTMLCanvasElement) return file;
+
+      const maxSide = UPLOAD_MAX_SIDE[selectedDocumentType] || 1400;
+      let imageData;
+      try {
+        imageData = await loadImage(file);
+      } catch {
+        return file;
+      }
+
+      const { image, url } = imageData;
+      try {
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        const longSide = Math.max(width, height);
+        if (!width || !height || longSide <= maxSide && file.size <= 1_200_000) return file;
+
+        const scale = Math.min(1, maxSide / longSide);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) return file;
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        const blob = await canvasToJpegBlob(canvas, UPLOAD_JPEG_QUALITY);
+        if (!blob || blob.size >= file.size) return file;
+        return new File([blob], jpegName(file.name), { type: "image/jpeg", lastModified: file.lastModified });
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    function loadImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => resolve({ image, url });
+        image.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("Gambar tidak bisa dibaca."));
+        };
+        image.src = url;
+      });
+    }
+
+    function canvasToJpegBlob(canvas, quality) {
+      return new Promise((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", quality);
+      });
+    }
+
+    function jpegName(name) {
+      const stem = (name || "upload").replace(/\.[^.]+$/, "");
+      return `${stem}-ocr.jpg`;
     }
 
     async function parseJsonResponse(response, fallbackMessage) {

@@ -283,9 +283,9 @@ class CliEvalTests(unittest.TestCase):
 
             record = _process_file(provider, image_path, "STNK", mode="fast")
 
-        self.assertEqual(provider.seen_sizes[0], (561, 422))
+        self.assertEqual(provider.seen_sizes[0], (820, 247))
         self.assertEqual(record["ocr"]["processing_mode"], "fast")
-        self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_fast_roi")
+        self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_official_roi")
 
     def test_ktp_fast_mode_uses_smaller_prepared_image_than_accurate(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -332,9 +332,9 @@ class CliEvalTests(unittest.TestCase):
 
             record = _process_file(provider, image_path, "STNK", mode="fast")
 
-        self.assertEqual(provider.seen_sizes, [(561, 422)])
-        self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_fast_roi")
-        self.assertEqual(record["ocr"]["preprocess"]["selected_max_side"], 720)
+        self.assertEqual(provider.seen_sizes, [(820, 247)])
+        self.assertEqual(record["ocr"]["preprocess"]["attempts"][0]["strategy"], "stnk_official_roi")
+        self.assertEqual(record["ocr"]["preprocess"]["selected_max_side"], 820)
         self.assertEqual(record["ocr"]["preprocess"]["retry_count"], 0)
         self.assertEqual(record["input_assessment"]["decision"], "needs_review")
         self.assertTrue(record["needs_review"])
