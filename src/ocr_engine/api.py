@@ -130,7 +130,14 @@ def create_app():
         document_type: str = Query("AUTO", pattern="^(AUTO|KTP|STNK)$"),
         mode: str = Query("fast", pattern="^(fast|accurate)$"),
     ) -> dict:
-        return await _ocr_document(file, document_type, mode, False)
+        return await _ocr_document(
+            file,
+            document_type,
+            mode,
+            False,
+            run_nik_fallback=False,
+            force_strategy=_ui_force_strategy(document_type, mode),
+        )
 
     @app.get("/ocr/enrichment/{job_id}")
     def enrichment_status(job_id: str) -> dict:
@@ -258,6 +265,7 @@ def create_app():
         run_nik_fallback: bool = True,
         purchase_background: bool = False,
         response_timeout_seconds: float | None = None,
+        force_strategy: str | None = None,
     ) -> dict:
         started = time.perf_counter()
         suffix = Path(file.filename or "upload.jpg").suffix or ".jpg"
@@ -287,6 +295,7 @@ def create_app():
                 mode,
                 run_nik_fallback=run_nik_fallback,
                 response_timeout_seconds=response_timeout_seconds,
+                force_strategy=force_strategy,
             )
         except OcrResponseTimeout as exc:
             return _ocr_timeout_payload(started, exc.job_id, document_type, mode)
@@ -535,6 +544,17 @@ def _create_ocr_provider():
     return PaddleOcrProvider()
 
 
+def _ui_force_strategy(document_type: str, mode: str) -> str | None:
+    if mode != "fast":
+        return None
+    document = document_type.upper()
+    if document == "KTP":
+        return "ktp_fast"
+    if document == "STNK":
+        return "stnk_fast_roi"
+    return None
+
+
 def _warm_postal_code_index() -> None:
     try:
         get_default_postal_code_index()
@@ -630,6 +650,7 @@ async def _run_pipeline_for_request(
     mode: str,
     run_nik_fallback: bool = True,
     response_timeout_seconds: float | None = None,
+    force_strategy: str | None = None,
 ):
     timeout_seconds = response_timeout_seconds
     if timeout_seconds is None and document_type.upper() == "STNK" and mode == "fast":
@@ -645,6 +666,7 @@ async def _run_pipeline_for_request(
         tmpdir,
         mode,
         run_nik_fallback,
+        force_strategy,
     )
     try:
         if timeout_seconds is None:

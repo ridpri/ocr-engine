@@ -163,6 +163,29 @@ class MissingTtlKtpProvider:
         )
 
 
+class RetryProneKtpProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def extract_text(self, image_path: str) -> OcrResult:
+        self.calls += 1
+        return OcrResult(
+            raw_text="\n".join(
+                [
+                    "PROVINSI DKI JAKARTA",
+                    "NIK : 3175010101900001",
+                    "Tempat/Tgl Lahir : JAKARTA, 01-01-1990",
+                    "Jenis Kelamin : LAKI-LAKI",
+                    "RT/RW : 001/002",
+                    "Kel/Desa : GAMBIR",
+                    "Kecamatan : GAMBIR",
+                ]
+            ),
+            tokens=[OcrToken("KTP", 0.99)],
+            provider="fake",
+        )
+
+
 class MedanKtpProvider:
     def extract_text(self, image_path: str) -> OcrResult:
         return OcrResult(
@@ -257,6 +280,19 @@ class ApiEndpointTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["document_type"], "KTP")
         self.assertEqual(payload["ocr"]["processing_mode"], "fast")
+
+    def test_ui_ocr_endpoint_uses_single_pass_ktp_fast_path(self):
+        provider = RetryProneKtpProvider()
+        client = _client_with_provider(provider)
+
+        response = client.post("/ui/ocr?document_type=KTP", files={"file": ("ktp.jpg", _jpeg_bytes(), "image/jpeg")})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["ocr"]["processing_mode"], "fast")
+        self.assertEqual(payload["ocr"]["preprocess"]["retry_count"], 0)
+        self.assertEqual(payload["ocr"]["preprocess"]["attempts"][0]["strategy"], "ktp_fast")
+        self.assertEqual(provider.calls, 1)
 
     def test_fixed_ktp_endpoint_returns_expected_document_type(self):
         client = _client_with_fake_provider()
