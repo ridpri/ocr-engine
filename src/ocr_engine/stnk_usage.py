@@ -4,7 +4,6 @@ from typing import Any
 
 
 STNK_WEB_REQUIRED_FIELDS = ("nomor_polisi", "nama_pemilik", "tahun_pembuatan", "nomor_rangka", "nomor_mesin")
-WEB_LATENCY_BUDGET_MS = 20_000
 WEB_STRUCTURE_SCORE_MIN = 0.7
 BAD_INPUT_QUALITY_FLAGS = {"screen_or_desktop_capture", "document_too_small", "blur_detected", "low_text_density"}
 
@@ -67,9 +66,6 @@ def classify_stnk_record(record: dict[str, Any]) -> tuple[str, list[str]]:
     if missing_required:
         reasons.extend(f"field_not_ok:{field_name}" for field_name in missing_required)
 
-    processing_time_ms = _float_value(record.get("processing_time_ms"))
-    if processing_time_ms > WEB_LATENCY_BUDGET_MS:
-        reasons.append("processing_time_over_20s")
     if decision == "rejected_input" and "document_type_unknown" in reason_codes:
         reasons.append("document_type_unknown")
     elif decision != "approved_for_auto":

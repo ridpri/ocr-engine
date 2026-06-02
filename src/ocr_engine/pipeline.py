@@ -183,6 +183,8 @@ def _should_reject_before_ocr(requested_document_type: str | None, processing_mo
     if requested not in {"KTP", "STNK"} or processing_mode != "fast":
         return False
     flags = set(quality.get("flags") or [])
+    if requested == "STNK" and "stnk_tax_receipt_only" in flags:
+        return True
     return bool(flags.intersection({"document_too_small", "blur_detected"}))
 
 

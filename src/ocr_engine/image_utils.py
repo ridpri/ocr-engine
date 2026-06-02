@@ -103,6 +103,8 @@ def prepare_stnk_official_roi_image(
         width, height = image.size
         if height > width * 1.25:
             roi = image.crop((int(width * 0.48), 0, width, height)).rotate(90, expand=True)
+        elif height <= width * 0.65:
+            roi = image
         else:
             top = min(height - 1, max(0, int(height * top_ratio)))
             roi = image.crop((0, top, width, height))

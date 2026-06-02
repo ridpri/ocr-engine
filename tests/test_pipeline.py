@@ -56,6 +56,64 @@ class SequentialProvider:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_stnk_fast_rejects_tax_receipt_only_before_ocr(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            image_path = tmp_path / "tax-only.jpg"
+            image = Image.new("RGB", (1200, 800), (95, 35, 55))
+            for y in range(250, 570):
+                for x in range(80, 1120):
+                    image.putpixel((x, y), (214, 197, 155))
+            for x in range(80, 1120, 180):
+                for y in range(250, 570):
+                    image.putpixel((x, y), (30, 30, 30))
+            for y in range(300, 540, 55):
+                for x in range(80, 1120):
+                    image.putpixel((x, y), (35, 35, 35))
+            image.save(image_path)
+            provider = FailingProvider()
+
+            result = run_ocr_pipeline(provider, image_path, "STNK", tmp_path, processing_mode="fast")
+
+        self.assertEqual(provider.calls, 0)
+        self.assertEqual(result.assessment["decision"], "rejected_input")
+        self.assertIn("stnk_tax_receipt_only", result.assessment["reason_codes"])
+        self.assertIn("pre_ocr_rejected", result.assessment["reason_codes"])
+        self.assertEqual(result.ocr_result.provider, "preflight")
+        self.assertEqual(result.preprocess["attempts"], [])
+
+    def test_stnk_fast_does_not_preflight_reject_full_frame_document(self):
+        raw_text = "\n".join(
+            [
+                "SURAT TANDA NOMOR KENDARAAN BERMOTOR",
+                "NOMOR REGISTRASI B 1901 DZW",
+                "NAMA PEMILIK MEIGA PRANURAINI",
+                "TAHUN PEMBUATAN 2024",
+                "NOMOR RANGKA MA3TYKL1SRT103870",
+                "NOMOR MESIN K15CN7469747",
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            image_path = tmp_path / "stnk-full.jpg"
+            image = Image.new("RGB", (1200, 800), (225, 235, 220))
+            for y in range(420, 760):
+                for x in range(20, 1180):
+                    image.putpixel((x, y), (218, 238, 231))
+            for y in range(80, 760, 40):
+                for x in range(30, 1170):
+                    image.putpixel((x, y), (95, 115, 120))
+            for x in range(50, 1150, 120):
+                for y in range(50, 770):
+                    image.putpixel((x, y), (105, 125, 128))
+            image.save(image_path)
+            provider = SequentialProvider([raw_text])
+
+            result = run_ocr_pipeline(provider, image_path, "STNK", tmp_path, processing_mode="fast")
+
+        self.assertEqual(provider.calls, 1)
+        self.assertNotIn("stnk_tax_receipt_only", result.assessment["reason_codes"])
+
     def test_ktp_fast_rejects_tiny_image_before_ocr(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)

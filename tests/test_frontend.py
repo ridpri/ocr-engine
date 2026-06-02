@@ -52,6 +52,8 @@ class FrontendTests(unittest.TestCase):
         self.assertIn('id="copy-json"', html)
         self.assertIn("FIELD_ORDER", html)
         self.assertIn("orderedFieldEntries", html)
+        self.assertIn("shouldRenderFields", html)
+        self.assertIn('reasonCodes.includes("pre_ocr_rejected")', html)
         self.assertIn("renderResult(data, roundtripMs)", html)
         self.assertIn('id="summary-status"', html)
         self.assertIn('id="summary-processing-time"', html)

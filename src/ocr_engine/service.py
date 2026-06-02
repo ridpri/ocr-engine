@@ -241,6 +241,8 @@ def build_input_assessment(
         "document_type_unknown" in reason_codes and parsed.needs_review
     ) or (
         "suspicious_ktp_output" in reason_codes
+    ) or (
+        "stnk_tax_receipt_only" in reason_codes
     )
     quality_review_flags = {"screen_or_desktop_capture", "document_too_small", "blur_detected", "low_text_density"}
     ktp_review = any(
@@ -317,6 +319,8 @@ def _provider_requires_review(ocr_provider: str | None) -> bool:
 def _assessment_message(decision: str, reason_codes: list[str], expected: str, detected: str) -> str:
     if "document_type_mismatch" in reason_codes:
         return f"Dokumen yang diupload terdeteksi {detected}, bukan {expected}. Mohon upload dokumen yang sesuai."
+    if "stnk_tax_receipt_only" in reason_codes:
+        return "Dokumen terdeteksi sebagai bukti pajak STNK/TBPKP, bukan STNK kendaraan lengkap. Upload STNK lengkap untuk membaca data kendaraan."
     if "pre_ocr_rejected" in reason_codes:
         return "Foto terlalu kecil atau buram untuk diproses otomatis. Mohon upload ulang foto dokumen yang lebih jelas."
     if "document_type_unknown" in reason_codes:

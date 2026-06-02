@@ -588,19 +588,21 @@ def frontend_html() -> str:
       }
 
       fieldsBody.innerHTML = "";
-      orderedFieldEntries(data).forEach(([key, field]) => {
-        const row = document.createElement("div");
-        row.className = "field-row";
-        const note = fieldNote(field);
-        row.innerHTML = `
-          <div class="field-name">${escapeHtml(fieldLabel(key))}</div>
-          <div>
-            <div class="field-value">${escapeHtml(fieldValue(field))}</div>
-            ${note ? `<div class="field-note">${escapeHtml(note)}</div>` : ""}
-          </div>
-        `;
-        fieldsBody.appendChild(row);
-      });
+      if (shouldRenderFields(reasonCodes)) {
+        orderedFieldEntries(data).forEach(([key, field]) => {
+          const row = document.createElement("div");
+          row.className = "field-row";
+          const note = fieldNote(field);
+          row.innerHTML = `
+            <div class="field-name">${escapeHtml(fieldLabel(key))}</div>
+            <div>
+              <div class="field-value">${escapeHtml(fieldValue(field))}</div>
+              ${note ? `<div class="field-note">${escapeHtml(note)}</div>` : ""}
+            </div>
+          `;
+          fieldsBody.appendChild(row);
+        });
+      }
       fieldsWrap.style.display = fieldsBody.children.length ? "block" : "none";
 
       rawJsonDetails.style.display = "block";
@@ -674,6 +676,10 @@ def frontend_html() -> str:
         if (!seen.has(key)) entries.push([key, field]);
       });
       return entries;
+    }
+
+    function shouldRenderFields(reasonCodes) {
+      return !reasonCodes.includes("pre_ocr_rejected");
     }
 
     function setSummaryStatus(decision) {

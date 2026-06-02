@@ -47,6 +47,28 @@ class ImageUtilsTests(unittest.TestCase):
                 self.assertGreater(prepared.width, 900)
                 self.assertLess(prepared.height, 560)
 
+    def test_stnk_official_roi_keeps_single_horizontal_stnk_full_frame(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "single-stnk.jpg"
+            output = Path(tmpdir) / "prepared.jpg"
+            Image.new("RGB", (1600, 850), "white").save(source)
+
+            prepare_stnk_official_roi_image(source, output, max_side=800)
+
+            with Image.open(output) as prepared:
+                self.assertEqual(prepared.size, (800, 425))
+
+    def test_stnk_official_roi_crops_lower_panel_for_stacked_stnk_photo(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "stacked-stnk.jpg"
+            output = Path(tmpdir) / "prepared.jpg"
+            Image.new("RGB", (1326, 1055), "white").save(source)
+
+            prepare_stnk_official_roi_image(source, output, max_side=820)
+
+            with Image.open(output) as prepared:
+                self.assertEqual(prepared.size, (820, 294))
+
 
 if __name__ == "__main__":
     unittest.main()
